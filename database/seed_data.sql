@@ -1,8 +1,3 @@
--- ============================================================
--- FLOOD RESCUE SYSTEM - SEED DATA (Comprehensive)
--- Run AFTER schema.sql
--- All user passwords: 123456
--- ============================================================
 
 USE flood_rescue_db;
 GO
