@@ -1,22 +1,9 @@
-/**
- * OpenWeatherMap API Service
- * Free tier: 1,000 calls/day — đủ cho project học tập
- * Docs: https://openweathermap.org/api
- *
- * Đăng ký miễn phí tại: https://home.openweathermap.org/users/sign_up
- * Sau khi đăng ký, lấy API key tại: https://home.openweathermap.org/api_keys
- * Thêm vào file .env: OPENWEATHERMAP_API_KEY=your_key_here
- */
-
 const https = require("https");
 const logger = require("../config/logger");
 
 const API_KEY = process.env.OPENWEATHERMAP_API_KEY || "";
 const BASE_URL = "https://api.openweathermap.org/data/2.5";
 
-// ============================================================
-// Helper: HTTPS GET request (không cần thêm dependency)
-// ============================================================
 function httpGet(url) {
   return new Promise((resolve, reject) => {
     https
@@ -36,17 +23,10 @@ function httpGet(url) {
       .on("error", reject);
   });
 }
-
-// ============================================================
-// Kiểm tra API key có được cấu hình chưa
-// ============================================================
 function isConfigured() {
   return API_KEY && API_KEY.length > 0 && API_KEY !== "your_key_here";
 }
 
-// ============================================================
-// 1. Lấy thời tiết hiện tại cho 1 tọa độ
-// ============================================================
 async function getCurrentWeather(lat, lon) {
   if (!isConfigured()) {
     throw new Error("OPENWEATHERMAP_API_KEY chưa được cấu hình trong .env");
@@ -87,10 +67,6 @@ async function getCurrentWeather(lat, lon) {
     throw err;
   }
 }
-
-// ============================================================
-// 2. Lấy dự báo 5 ngày / 3 giờ
-// ============================================================
 async function getForecast(lat, lon) {
   if (!isConfigured()) {
     throw new Error("OPENWEATHERMAP_API_KEY chưa được cấu hình trong .env");
@@ -173,11 +149,6 @@ async function getForecast(lat, lon) {
     throw err;
   }
 }
-
-// ============================================================
-// 3. Phân tích mức cảnh báo lũ từ dữ liệu thời tiết
-//    Dùng lượng mưa + gió để tự động đánh giá severity
-// ============================================================
 function analyzeFloodRisk(currentWeather, forecastDaily) {
   const risks = [];
 
@@ -231,12 +202,7 @@ function analyzeFloodRisk(currentWeather, forecastDaily) {
 
   return risks;
 }
-
-// ============================================================
-// 4. Helper: Lấy icon URL từ mã icon OpenWeatherMap
-// ============================================================
 function getIconUrl(iconCode, size = 2) {
-  // size: 1 = nhỏ, 2 = lớn, 4 = rất lớn
   return `https://openweathermap.org/img/wn/${iconCode}@${size}x.png`;
 }
 
