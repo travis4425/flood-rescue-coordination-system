@@ -68,6 +68,14 @@ router.post("/login", loginLimiter, async (req, res, next) => {
     );
 
     const { password_hash, ...userData } = user;
+    // Check if rescue_team user is a team leader
+    if (userData.role === "rescue_team") {
+      const leaderCheck = await query(
+        `SELECT TOP 1 id FROM rescue_teams WHERE leader_id = @id`,
+        { id: userData.id },
+      );
+      userData.is_team_leader = leaderCheck.recordset.length > 0;
+    }
     res.json({ token, user: userData });
   } catch (err) {
     next(err);
@@ -78,7 +86,7 @@ router.post("/login", loginLimiter, async (req, res, next) => {
 router.get("/me", authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.avatar_url, 
+      `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.avatar_url,
               u.role, u.region_id, u.province_id, u.is_active, u.last_login,
               r.name as region_name, p.name as province_name
        FROM users u
@@ -90,7 +98,16 @@ router.get("/me", authenticate, async (req, res, next) => {
     if (result.recordset.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy tài khoản." });
     }
-    res.json(result.recordset[0]);
+    const userData = result.recordset[0];
+    // Check if rescue_team user is a team leader
+    if (userData.role === "rescue_team") {
+      const leaderCheck = await query(
+        `SELECT TOP 1 id FROM rescue_teams WHERE leader_id = @id`,
+        { id: userData.id },
+      );
+      userData.is_team_leader = leaderCheck.recordset.length > 0;
+    }
+    res.json(userData);
   } catch (err) {
     next(err);
   }
