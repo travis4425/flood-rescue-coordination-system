@@ -112,61 +112,83 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
       },
     );
 
-    // Sync request status
+    // Fetch mission data for syncing and notifications
     const mission = await query(
-      "SELECT request_id, team_id FROM missions WHERE id = @id",
+      `SELECT m.request_id, m.team_id, rr.tracking_code
+       FROM missions m JOIN rescue_requests rr ON m.request_id = rr.id
+       WHERE m.id = @id`,
       { id: parseInt(req.params.id) },
     );
+
     if (mission.recordset[0]) {
-      const requestStatus =
-        status === "en_route" || status === "on_scene"
-          ? "in_progress"
-          : status === "completed"
-            ? "completed"
-            : null;
-      if (requestStatus) {
+      const { request_id, team_id, tracking_code } = mission.recordset[0];
+
+      // Sync request to in_progress when team is moving/on scene
+      if (status === "en_route" || status === "on_scene") {
         await query(
-          `UPDATE rescue_requests SET status = @status, updated_at = GETDATE()
-           ${requestStatus === "in_progress" ? ", started_at = COALESCE(started_at, GETDATE())" : ""}
-           ${requestStatus === "completed" ? ", completed_at = GETDATE(), response_time_minutes = DATEDIFF(MINUTE, created_at, GETDATE())" : ""}
-           WHERE id = @request_id`,
-          {
-            status: requestStatus,
-            request_id: mission.recordset[0].request_id,
-          },
+          `UPDATE rescue_requests SET status = 'in_progress', updated_at = GETDATE(),
+           started_at = COALESCE(started_at, GETDATE()) WHERE id = @request_id`,
+          { request_id },
         );
       }
-      // Update team status on completion
+
+      // When completed: set rescue_team_confirmed flag — coordinator must close manually
+      if (status === "completed") {
+        await query(
+          `UPDATE rescue_requests SET rescue_team_confirmed = 1, updated_at = GETDATE()
+           WHERE id = @request_id`,
+          { request_id },
+        );
+      }
+
+      // Free team when mission ends
       if (status === "completed" || status === "aborted") {
         const activeMissions = await query(
-          `SELECT COUNT(*) as cnt FROM missions 
+          `SELECT COUNT(*) as cnt FROM missions
            WHERE team_id = @team_id AND status NOT IN ('completed', 'aborted')`,
-          { team_id: mission.recordset[0].team_id },
+          { team_id },
         );
         if (activeMissions.recordset[0].cnt === 0) {
           await query(
             "UPDATE rescue_teams SET status = 'available' WHERE id = @id",
-            { id: mission.recordset[0].team_id },
+            { id: team_id },
           );
         }
       }
-    }
 
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("mission_updated", {
-        mission_id: parseInt(req.params.id),
-        status,
-      });
-      if (mission.recordset[0]) {
+      // Citizen notification for each step
+      const notifMap = {
+        accepted: { type: "mission_accepted", title: "Doi cuu ho da nhan nhiem vu", msg: "Doi cuu ho da xac nhan va dang chuan bi xuat phat den vi tri cua ban." },
+        en_route: { type: "mission_en_route", title: "Doi cuu ho dang tren duong", msg: "Doi cuu ho dang di chuyen den vi tri cua ban, vui long cho." },
+        on_scene: { type: "mission_on_scene", title: "Doi cuu ho da den hien truong", msg: "Doi cuu ho da co mat tai hien truong, dang tien hanh cuu ho." },
+        completed: { type: "mission_completed", title: "Cuu ho hoan thanh", msg: "Doi cuu ho da hoan thanh nhiem vu. Dang cho coordinator xac nhan dong don." },
+        aborted: { type: "mission_aborted", title: "Nhiem vu bi huy", msg: "Nhiem vu cuu ho da bi huy. Chung toi se co gang ho tro ban som nhat." },
+      };
+      if (notifMap[status]) {
+        await query(
+          `INSERT INTO notifications (tracking_code, type, title, message)
+           VALUES (@code, @type, @title, @msg)`,
+          {
+            code: tracking_code,
+            type: notifMap[status].type,
+            title: notifMap[status].title,
+            msg: notifMap[status].msg,
+          },
+        );
+      }
+
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("mission_updated", { mission_id: parseInt(req.params.id), status });
         io.emit("request_updated", {
-          id: mission.recordset[0].request_id,
-          status: status === "completed" ? "completed" : "in_progress",
+          id: request_id,
+          status: (status === "en_route" || status === "on_scene") ? "in_progress" : undefined,
+          rescue_team_confirmed: status === "completed" ? true : undefined,
         });
       }
     }
 
-    res.json({ message: "Cập nhật nhiệm vụ thành công." });
+    res.json({ message: "Cap nhat nhiem vu thanh cong." });
   } catch (err) {
     next(err);
   }
