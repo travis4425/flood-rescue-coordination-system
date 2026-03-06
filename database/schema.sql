@@ -387,6 +387,14 @@ CREATE INDEX idx_audit_created ON audit_logs(created_at DESC);
 ALTER TABLE rescue_requests ADD citizen_confirmed BIT DEFAULT 0;
 ALTER TABLE rescue_requests ADD citizen_confirmed_at DATETIME2 NULL;
 
+-- ADD geo names from Nominatim (fallback display when district/province not in DB)
+ALTER TABLE rescue_requests ADD geo_province_name NVARCHAR(255) NULL;
+ALTER TABLE rescue_requests ADD geo_district_name NVARCHAR(255) NULL;
+
+-- ADD rescue flow columns
+ALTER TABLE rescue_requests ADD rescue_team_confirmed BIT NOT NULL DEFAULT 0;
+ALTER TABLE rescue_requests ADD citizen_rescued_by_other_count TINYINT NOT NULL DEFAULT 0;
+
 -- RELIEF DISTRIBUTIONS (Phân phối cứu trợ)
 CREATE TABLE relief_distributions (
     id INT IDENTITY(1,1) PRIMARY KEY,
