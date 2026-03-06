@@ -150,7 +150,7 @@ router.post(
 
       // Auto-assign coordinator based on region
       let coordinator_id = null;
-      if (district_id) {
+      if (district_id || province_id) {
         const coordResult = await query(
           `SELECT TOP 1 cr.user_id 
          FROM coordinator_regions cr
@@ -362,6 +362,65 @@ router.put("/track/:trackingCode/confirm", async (req, res, next) => {
 });
 
 // ============================================================
+// PUBLIC: Citizen reports rescued by other citizen (double confirmation)
+// PUT /api/requests/track/:trackingCode/rescued-by-other
+// ============================================================
+router.put("/track/:trackingCode/rescued-by-other", async (req, res, next) => {
+  try {
+    const current = await query(
+      "SELECT id, status, citizen_rescued_by_other_count FROM rescue_requests WHERE tracking_code = @code",
+      { code: req.params.trackingCode },
+    );
+    if (!current.recordset[0]) {
+      return res.status(404).json({ error: "Không tìm thấy yêu cầu." });
+    }
+
+    const { id, status, citizen_rescued_by_other_count } = current.recordset[0];
+
+    if (["completed", "cancelled", "rejected"].includes(status)) {
+      return res.status(400).json({ error: "Yêu cầu này đã kết thúc." });
+    }
+
+    const newCount = (citizen_rescued_by_other_count || 0) + 1;
+
+    if (newCount >= 2) {
+      // Second confirmation — cancel the request
+      await query(
+        `UPDATE rescue_requests
+         SET citizen_rescued_by_other_count = @count,
+             status = 'cancelled',
+             reject_reason = N'Nguoi dan bao da duoc cuu boi nguoi khac',
+             updated_at = GETDATE()
+         WHERE id = @id`,
+        { count: newCount, id },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("request_updated", { id, status: "cancelled" });
+
+      return res.json({
+        confirmed: true,
+        message: "Cảm ơn bạn đã xác nhận. Yêu cầu đã được đóng. Chúc bạn bình an!",
+      });
+    }
+
+    // First confirmation — just increment, wait for second
+    await query(
+      "UPDATE rescue_requests SET citizen_rescued_by_other_count = @count, updated_at = GETDATE() WHERE id = @id",
+      { count: newCount, id },
+    );
+
+    res.json({
+      confirmed: false,
+      current_count: newCount,
+      message: "Vui lòng xác nhận lần nữa để đóng yêu cầu.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
 // PUBLIC: Citizen edits their own PENDING request (NO LOGIN)
 // PUT /api/requests/track/:trackingCode/update
 // ============================================================
@@ -491,9 +550,11 @@ router.get("/", authenticate, async (req, res, next) => {
         (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id))`;
       params.user_id = req.user.id;
     } else if (req.user.role === "manager") {
-      where +=
-        " AND rr.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)";
-      params.region_id = req.user.region_id;
+      if (req.user.region_id) {
+        where += " AND rr.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)";
+        params.region_id = req.user.region_id;
+      }
+      // If no region_id set → manager sees all requests
     } else if (req.user.role === "rescue_team") {
       where += ` AND rr.assigned_team_id IN 
         (SELECT team_id FROM rescue_team_members WHERE user_id = @user_id
@@ -617,6 +678,16 @@ router.put(
       }
 
       const fullRequest = await getRequestById(parseInt(req.params.id));
+
+      // Notify citizen
+      if (fullRequest?.tracking_code) {
+        await query(
+          `INSERT INTO notifications (tracking_code, type, title, message)
+           VALUES (@code, 'request_verified', N'Yeu cau da duoc xac minh', N'Yeu cau cuu ho cua ban da duoc coordinator xac minh va dang cho phan cong doi cuu ho.')`,
+          { code: fullRequest.tracking_code },
+        );
+      }
+
       const io = req.app.get("io");
       if (io) io.emit("request_updated", fullRequest);
 
@@ -744,6 +815,19 @@ router.put(
             fullRequest,
           );
         }
+      }
+
+      // Notify citizen
+      if (fullRequest?.tracking_code) {
+        const teamName = fullRequest.team_name || "Đội cứu hộ";
+        await query(
+          `INSERT INTO notifications (tracking_code, type, title, message)
+           VALUES (@code, 'request_assigned', N'Da phan cong doi cuu ho', @msg)`,
+          {
+            code: fullRequest.tracking_code,
+            msg: `Doi cuu ho "${teamName}" da duoc phan cong den ho tro ban. Ho se lien he voi ban som.`,
+          },
+        );
       }
 
       res.json({ message: "Đã phân công đội cứu hộ.", data: fullRequest });
@@ -905,6 +989,72 @@ router.put("/:id/cancel", authenticate, async (req, res, next) => {
     next(err);
   }
 });
+
+// ============================================================
+// COORDINATOR: Close case after rescue team confirmed completion
+// PUT /api/requests/:id/close
+// ============================================================
+router.put(
+  "/:id/close",
+  authenticate,
+  authorize("coordinator", "admin", "manager"),
+  async (req, res, next) => {
+    try {
+      const requestId = parseInt(req.params.id);
+
+      const current = await query(
+        "SELECT status, rescue_team_confirmed, coordinator_id, province_id, tracking_code FROM rescue_requests WHERE id = @id",
+        { id: requestId },
+      );
+      if (!current.recordset[0]) {
+        return res.status(404).json({ error: "Không tìm thấy yêu cầu." });
+      }
+
+      const { rescue_team_confirmed, status, tracking_code, coordinator_id } = current.recordset[0];
+      if (!rescue_team_confirmed) {
+        return res.status(400).json({ error: "Đội cứu hộ chưa xác nhận hoàn thành. Chưa thể đóng đơn." });
+      }
+      if (status === "completed") {
+        return res.status(400).json({ error: "Đơn này đã được đóng." });
+      }
+
+      await query(
+        `UPDATE rescue_requests SET
+           status = 'completed',
+           completed_at = GETDATE(),
+           response_time_minutes = DATEDIFF(MINUTE, created_at, GETDATE()),
+           updated_at = GETDATE()
+         WHERE id = @id`,
+        { id: requestId },
+      );
+
+      // Decrement coordinator workload
+      if (coordinator_id) {
+        await query(
+          `UPDATE coordinator_regions
+           SET current_workload = CASE WHEN current_workload > 0 THEN current_workload - 1 ELSE 0 END
+           WHERE user_id = @user_id`,
+          { user_id: coordinator_id },
+        );
+      }
+
+      // Notify citizen
+      await query(
+        `INSERT INTO notifications (tracking_code, type, title, message)
+         VALUES (@code, 'request_closed', N'Don cuu ho da hoan tat', N'Don cuu ho cua ban da duoc xac nhan hoan tat. Cam on ban da su dung dich vu. Chuc ban binh an!')`,
+        { code: tracking_code },
+      );
+
+      const fullRequest = await getRequestById(requestId);
+      const io = req.app.get("io");
+      if (io) io.emit("request_updated", fullRequest);
+
+      res.json({ message: "Đã đóng đơn thành công.", data: fullRequest });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ============================================================
 // ============================================================
