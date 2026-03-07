@@ -536,5 +536,4 @@ CREATE INDEX idx_vreq_requester ON vehicle_requests(requested_by);
 CREATE INDEX idx_vreq_created  ON vehicle_requests(created_at DESC);
 
 
-PRINT N'✅ Schema created successfully - 27 tables';
 GO
