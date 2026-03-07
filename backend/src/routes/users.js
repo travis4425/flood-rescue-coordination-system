@@ -99,12 +99,36 @@ router.post(
           province_id: province_id ? parseInt(province_id) : null,
         },
       );
-      res
-        .status(201)
-        .json({
-          id: result.recordset[0].id,
-          message: "Tạo tài khoản thành công.",
-        });
+      const newUserId = result.recordset[0].id;
+
+      // Tự động tạo coordinator_regions nếu role là coordinator và có province_id
+      if (role === 'coordinator' && province_id) {
+        await query(
+          `INSERT INTO coordinator_regions (user_id, province_id, max_workload, current_workload)
+           VALUES (@user_id, @province_id, 20, 0)`,
+          { user_id: newUserId, province_id: parseInt(province_id) }
+        );
+      }
+
+      // Tự động xếp rescue_team vào đội ít thành viên nhất trong cùng tỉnh
+      if (role === 'rescue_team' && province_id) {
+        const teamResult = await query(
+          `SELECT TOP 1 rt.id
+           FROM rescue_teams rt
+           WHERE rt.province_id = @province_id AND rt.status != 'off_duty'
+           ORDER BY (SELECT COUNT(*) FROM rescue_team_members WHERE team_id = rt.id) ASC`,
+          { province_id: parseInt(province_id) }
+        );
+        if (teamResult.recordset.length > 0) {
+          const teamId = teamResult.recordset[0].id;
+          await query(
+            `INSERT INTO rescue_team_members (team_id, user_id, role_in_team) VALUES (@teamId, @userId, 'member')`,
+            { teamId, userId: newUserId }
+          );
+        }
+      }
+
+      res.status(201).json({ id: newUserId, message: "Tạo tài khoản thành công." });
     } catch (err) {
       if (err.message?.includes("UNIQUE"))
         return res
