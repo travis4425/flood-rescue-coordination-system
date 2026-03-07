@@ -40,7 +40,7 @@ router.get("/", authenticate, async (req, res, next) => {
 router.post(
   "/",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin", "manager", "coordinator"),
   async (req, res, next) => {
     try {
       const {
@@ -53,13 +53,21 @@ router.post(
         specialization,
         phone,
       } = req.body;
+
+      // Coordinator can only create teams in their own province
+      if (req.user.role === "coordinator" && req.user.province_id) {
+        if (parseInt(province_id) !== req.user.province_id) {
+          return res.status(403).json({ error: "Bạn chỉ có thể tạo đội trong tỉnh của mình." });
+        }
+      }
+
       const result = await query(
         `INSERT INTO rescue_teams (name, code, leader_id, province_id, district_id, capacity, specialization, phone)
        OUTPUT INSERTED.id
        VALUES (@name, @code, @leader_id, @province_id, @district_id, @capacity, @specialization, @phone)`,
         {
           name,
-          code,
+          code: code || `DT-${Math.random().toString(36).substring(2,6).toUpperCase()}`,
           leader_id: leader_id ? parseInt(leader_id) : null,
           province_id: parseInt(province_id),
           district_id: district_id ? parseInt(district_id) : null,
