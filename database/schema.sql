@@ -68,7 +68,7 @@ CREATE TABLE users (
     avatar_url VARCHAR(500),
     role VARCHAR(30) NOT NULL CHECK (role IN (
         'admin', 'manager',
-        'coordinator', 'rescue_team'
+        'coordinator', 'rescue_team', 'warehouse_keeper'
     )),
     region_id INT REFERENCES regions(id),
     province_id INT REFERENCES provinces(id),
@@ -231,9 +231,11 @@ CREATE TABLE missions (
     request_id INT NOT NULL REFERENCES rescue_requests(id),
     team_id INT NOT NULL REFERENCES rescue_teams(id),
     vehicle_id INT,
+    task_group_id INT,                              -- thuoc task nao (NULL = mission don le)
+    assigned_to_user_id INT REFERENCES users(id),   -- leader giao cho member nao
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN (
         'pending', 'assigned', 'accepted', 'en_route',
-        'on_scene', 'completed', 'aborted'
+        'on_scene', 'completed', 'aborted', 'failed'
     )),
     notes NVARCHAR(MAX),
     started_at DATETIME2,
@@ -294,6 +296,7 @@ CREATE TABLE warehouses (
     longitude FLOAT,
     capacity_tons FLOAT,
     manager_id INT REFERENCES users(id),
+    keeper_id INT REFERENCES users(id),             -- nguoi kiem kho (warehouse_keeper role)
     phone VARCHAR(20),
     status VARCHAR(20) DEFAULT 'active',
     created_at DATETIME2 DEFAULT GETDATE()
@@ -395,6 +398,78 @@ ALTER TABLE rescue_requests ADD geo_district_name NVARCHAR(255) NULL;
 ALTER TABLE rescue_requests ADD rescue_team_confirmed BIT NOT NULL DEFAULT 0;
 ALTER TABLE rescue_requests ADD citizen_rescued_by_other_count TINYINT NOT NULL DEFAULT 0;
 
+-- *19. TASK GROUPS (Coordinator gom nhieu request thanh 1 task)
+
+CREATE TABLE task_groups (
+    id                  INT IDENTITY(1,1) PRIMARY KEY,
+    name                NVARCHAR(200) NOT NULL,
+    coordinator_id      INT NOT NULL REFERENCES users(id),
+    team_id             INT NOT NULL REFERENCES rescue_teams(id),
+    province_id         INT REFERENCES provinces(id),
+    status              VARCHAR(20) NOT NULL DEFAULT 'in_progress'
+                        CHECK (status IN ('in_progress','completed','partial')),
+    stalled_alerted_at  DATETIME2 NULL,
+    notes               NVARCHAR(MAX),
+    created_at          DATETIME2 DEFAULT GETDATE(),
+    updated_at          DATETIME2 DEFAULT GETDATE()
+);
+CREATE INDEX idx_task_groups_team   ON task_groups(team_id);
+CREATE INDEX idx_task_groups_coord  ON task_groups(coordinator_id);
+CREATE INDEX idx_task_groups_status ON task_groups(status);
+
+-- Add FK from missions.task_group_id -> task_groups
+ALTER TABLE missions ADD CONSTRAINT fk_missions_task_group
+    FOREIGN KEY (task_group_id) REFERENCES task_groups(id);
+
+-- *20. TASK INCIDENT REPORTS (Bao cao su co tu member/leader)
+
+CREATE TABLE task_incident_reports (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    task_group_id   INT NOT NULL REFERENCES task_groups(id),
+    mission_id      INT NOT NULL REFERENCES missions(id),
+    reported_by     INT NOT NULL REFERENCES users(id),
+    report_type     VARCHAR(30) NOT NULL
+                    CHECK (report_type IN ('stalled','unrescuable','need_support')),
+    urgency         VARCHAR(20) NOT NULL DEFAULT 'medium'
+                    CHECK (urgency IN ('low','medium','high','critical')),
+    support_type    VARCHAR(50),
+    description     NVARCHAR(MAX),
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','acknowledged','resolved')),
+    resolved_by     INT REFERENCES users(id),
+    resolved_at     DATETIME2,
+    resolution_note NVARCHAR(500),
+    created_at      DATETIME2 DEFAULT GETDATE(),
+    updated_at      DATETIME2 DEFAULT GETDATE()
+);
+CREATE INDEX idx_incident_task    ON task_incident_reports(task_group_id);
+CREATE INDEX idx_incident_mission ON task_incident_reports(mission_id);
+CREATE INDEX idx_incident_status  ON task_incident_reports(status);
+
+-- *21. MISSION SUPPLY REQUESTS (Phieu xuat kho theo nhiem vu)
+
+CREATE TABLE mission_supply_requests (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    mission_id      INT NOT NULL REFERENCES missions(id),
+    warehouse_id    INT NOT NULL REFERENCES warehouses(id),
+    vehicle_id      INT REFERENCES vehicles(id),
+    supply_notes    NVARCHAR(MAX),
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','issued','returned','verified')),
+    requested_by    INT NOT NULL REFERENCES users(id),
+    issued_by       INT REFERENCES users(id),
+    verified_by     INT REFERENCES users(id),
+    issued_at       DATETIME2,
+    returned_at     DATETIME2,
+    verified_at     DATETIME2,
+    keeper_notes    NVARCHAR(500),
+    created_at      DATETIME2 DEFAULT GETDATE(),
+    updated_at      DATETIME2 DEFAULT GETDATE()
+);
+CREATE INDEX idx_supply_req_mission   ON mission_supply_requests(mission_id);
+CREATE INDEX idx_supply_req_warehouse ON mission_supply_requests(warehouse_id);
+CREATE INDEX idx_supply_req_status    ON mission_supply_requests(status);
+
 -- RELIEF DISTRIBUTIONS (Phân phối cứu trợ)
 CREATE TABLE relief_distributions (
     id INT IDENTITY(1,1) PRIMARY KEY,
@@ -461,5 +536,5 @@ CREATE INDEX idx_vreq_requester ON vehicle_requests(requested_by);
 CREATE INDEX idx_vreq_created  ON vehicle_requests(created_at DESC);
 
 
-PRINT N'✅ Schema created successfully - 24 tables';
+PRINT N'✅ Schema created successfully - 27 tables';
 GO
