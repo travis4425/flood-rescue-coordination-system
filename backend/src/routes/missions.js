@@ -14,10 +14,28 @@ router.get("/", authenticate, async (req, res, next) => {
     const params = {};
 
     if (req.user.role === "rescue_team") {
-      where += ` AND m.team_id IN 
-        (SELECT team_id FROM rescue_team_members WHERE user_id = @user_id
-         UNION SELECT id FROM rescue_teams WHERE leader_id = @user_id)`;
-      params.user_id = req.user.id;
+      // Check if user is a team leader
+      const leaderCheck = await query(
+        "SELECT id FROM rescue_teams WHERE leader_id = @uid",
+        { uid: req.user.id },
+      );
+      const isLeader = leaderCheck.recordset.length > 0;
+
+      if (isLeader) {
+        // Leader sees all missions of their team (including task group missions)
+        where += ` AND m.team_id IN (SELECT id FROM rescue_teams WHERE leader_id = @user_id)`;
+        params.user_id = req.user.id;
+      } else {
+        // Regular member: only missions assigned to them (via task system)
+        // + standalone missions (no task_group) for their team
+        where += ` AND (
+          m.assigned_to_user_id = @user_id
+          OR (m.task_group_id IS NULL AND m.team_id IN (
+            SELECT team_id FROM rescue_team_members WHERE user_id = @user_id
+          ))
+        )`;
+        params.user_id = req.user.id;
+      }
     }
     if (status) {
       where += " AND m.status = @status";
@@ -34,20 +52,22 @@ router.get("/", authenticate, async (req, res, next) => {
     );
 
     const result = await query(
-      `SELECT m.*, 
+      `SELECT m.*,
               rr.tracking_code, rr.latitude, rr.longitude, rr.address, rr.description,
               rr.citizen_name, rr.citizen_phone, rr.victim_count, rr.support_type,
-              rr.priority_score, rr.flood_severity,
+              rr.priority_score, rr.flood_severity, rr.status as request_status,
               it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.code as team_code,
-              v.name as vehicle_name, v.plate_number
+              v.name as vehicle_name, v.plate_number,
+              au.id as assigned_to_user_id, au.full_name as assigned_to_name
        FROM missions m
        JOIN rescue_requests rr ON m.request_id = rr.id
        LEFT JOIN incident_types it ON rr.incident_type_id = it.id
        LEFT JOIN urgency_levels ul ON rr.urgency_level_id = ul.id
        JOIN rescue_teams rt ON m.team_id = rt.id
        LEFT JOIN vehicles v ON m.vehicle_id = v.id
+       LEFT JOIN users au ON m.assigned_to_user_id = au.id
        ${where}
        ORDER BY rr.priority_score DESC, m.created_at DESC
        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
@@ -77,6 +97,7 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
       "on_scene",
       "completed",
       "aborted",
+      "failed",
     ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: "Trạng thái không hợp lệ." });
@@ -132,27 +153,55 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
         );
       }
 
-      // When completed: set rescue_team_confirmed flag — coordinator must close manually
+      // When completed: auto-close the request immediately (no citizen confirm needed)
       if (status === "completed") {
         await query(
-          `UPDATE rescue_requests SET rescue_team_confirmed = 1, updated_at = GETDATE()
+          `UPDATE rescue_requests SET status = 'completed', rescue_team_confirmed = 1,
+           completed_at = GETDATE(), updated_at = GETDATE()
            WHERE id = @request_id`,
           { request_id },
         );
       }
 
-      // Free team when mission ends
-      if (status === "completed" || status === "aborted") {
+      // Free team when mission ends — only if no more active missions across ALL tasks
+      if (status === "completed" || status === "aborted" || status === "failed") {
         const activeMissions = await query(
           `SELECT COUNT(*) as cnt FROM missions
-           WHERE team_id = @team_id AND status NOT IN ('completed', 'aborted')`,
+           WHERE team_id = @team_id AND status NOT IN ('completed', 'aborted', 'failed')`,
           { team_id },
         );
         if (activeMissions.recordset[0].cnt === 0) {
           await query(
-            "UPDATE rescue_teams SET status = 'available' WHERE id = @id",
+            "UPDATE rescue_teams SET status = 'available', updated_at = GETDATE() WHERE id = @id",
             { id: team_id },
           );
+        }
+
+        // Auto-update task_group status if all sub-missions are done
+        const missionFull = await query(
+          "SELECT task_group_id FROM missions WHERE id = @id",
+          { id: parseInt(req.params.id) },
+        );
+        const taskGroupId = missionFull.recordset[0]?.task_group_id;
+        if (taskGroupId) {
+          const taskMissions = await query(
+            `SELECT status FROM missions WHERE task_group_id = @tgid`,
+            { tgid: taskGroupId },
+          );
+          const all = taskMissions.recordset;
+          const allDone = all.every((m) =>
+            ["completed", "aborted", "failed"].includes(m.status),
+          );
+          if (allDone) {
+            const anyFailed = all.some((m) => m.status === "failed");
+            const taskStatus = anyFailed ? "partial" : "completed";
+            await query(
+              "UPDATE task_groups SET status = @status, updated_at = GETDATE() WHERE id = @id",
+              { status: taskStatus, id: taskGroupId },
+            );
+            const io2 = req.app.get("io");
+            if (io2) io2.emit("task_updated", { task_group_id: taskGroupId, status: taskStatus });
+          }
         }
       }
 
@@ -161,7 +210,7 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
         accepted: { type: "mission_accepted", title: "Doi cuu ho da nhan nhiem vu", msg: "Doi cuu ho da xac nhan va dang chuan bi xuat phat den vi tri cua ban." },
         en_route: { type: "mission_en_route", title: "Doi cuu ho dang tren duong", msg: "Doi cuu ho dang di chuyen den vi tri cua ban, vui long cho." },
         on_scene: { type: "mission_on_scene", title: "Doi cuu ho da den hien truong", msg: "Doi cuu ho da co mat tai hien truong, dang tien hanh cuu ho." },
-        completed: { type: "mission_completed", title: "Cuu ho hoan thanh", msg: "Doi cuu ho da hoan thanh nhiem vu. Dang cho coordinator xac nhan dong don." },
+        completed: { type: "mission_completed", title: "Cuu ho hoan thanh", msg: "Doi cuu ho da hoan thanh va dong don cuu ho cua ban. Cam on ban da lien he, chuc ban binh an!" },
         aborted: { type: "mission_aborted", title: "Nhiem vu bi huy", msg: "Nhiem vu cuu ho da bi huy. Chung toi se co gang ho tro ban som nhat." },
       };
       if (notifMap[status]) {
