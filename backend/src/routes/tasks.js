@@ -574,11 +574,86 @@ router.put(
         { task_id: taskId },
       );
 
+      // Free all teams involved in this task back to available
+      await query(
+        `UPDATE rescue_teams SET status = 'available', updated_at = GETDATE()
+         WHERE id IN (
+           SELECT DISTINCT team_id FROM task_groups WHERE id = @task_id
+           UNION
+           SELECT DISTINCT m.team_id FROM missions m WHERE m.task_group_id = @task_id AND m.team_id IS NOT NULL
+         )`,
+        { task_id: taskId },
+      );
+
       const io = req.app.get("io");
       if (io)
         io.emit("task_updated", { task_group_id: taskId, status: finalStatus });
 
       res.json({ message: "Đã xác nhận đóng task.", status: finalStatus });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── PUT /api/tasks/:id/cancel ───────────────────────────────────────────────
+// Coordinator cancels a task → sets task to cancelled, frees requests back to verified
+router.put(
+  "/:id/cancel",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const taskId = parseInt(req.params.id);
+      const { reason } = req.body;
+
+      const taskCheck = await query(
+        "SELECT id, status FROM task_groups WHERE id = @id",
+        { id: taskId },
+      );
+      if (taskCheck.recordset.length === 0)
+        return res.status(404).json({ error: "Task không tồn tại." });
+      if (taskCheck.recordset[0].status === "cancelled")
+        return res.status(400).json({ error: "Task đã bị hủy rồi." });
+
+      // Cancel task
+      await query(
+        "UPDATE task_groups SET status = 'cancelled', notes = ISNULL(notes,'') + @suffix, updated_at = GETDATE() WHERE id = @id",
+        { id: taskId, suffix: reason ? `\n[Hủy: ${reason}]` : "\n[Hủy bởi coordinator]" },
+      );
+
+      // Abort active missions
+      await query(
+        `UPDATE missions SET status = 'aborted', updated_at = GETDATE()
+         WHERE task_group_id = @task_id AND status NOT IN ('completed','failed','aborted')`,
+        { task_id: taskId },
+      );
+
+      // Free rescue requests back to verified
+      await query(
+        `UPDATE rr SET rr.status = 'verified', rr.updated_at = GETDATE()
+         FROM rescue_requests rr
+         JOIN missions m ON rr.id = m.request_id
+         WHERE m.task_group_id = @task_id AND rr.status = 'assigned'`,
+        { task_id: taskId },
+      );
+
+      // Set all teams involved in this task back to available
+      // (primary team + any support teams that were dispatched)
+      await query(
+        `UPDATE rescue_teams SET status = 'available', updated_at = GETDATE()
+         WHERE id IN (
+           SELECT DISTINCT team_id FROM task_groups WHERE id = @task_id
+           UNION
+           SELECT DISTINCT m.team_id FROM missions m WHERE m.task_group_id = @task_id AND m.team_id IS NOT NULL
+         )`,
+        { task_id: taskId },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("task_updated", { task_group_id: taskId, status: "cancelled" });
+
+      res.json({ message: "Đã hủy task." });
     } catch (err) {
       next(err);
     }
