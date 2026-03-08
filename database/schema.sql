@@ -295,9 +295,11 @@ CREATE TABLE warehouses (
     latitude FLOAT,
     longitude FLOAT,
     capacity_tons FLOAT,
-    manager_id INT REFERENCES users(id),
+    manager_id INT REFERENCES users(id),            -- manager tỉnh (kho trung tâm)
+    coordinator_id INT REFERENCES users(id),        -- coordinator phụ trách (kho vệ tinh)
     keeper_id INT REFERENCES users(id),             -- nguoi kiem kho (warehouse_keeper role)
     phone VARCHAR(20),
+    warehouse_type VARCHAR(20) DEFAULT 'central' CHECK (warehouse_type IN ('central','satellite')),
     status VARCHAR(20) DEFAULT 'active',
     created_at DATETIME2 DEFAULT GETDATE()
 );
@@ -407,7 +409,7 @@ CREATE TABLE task_groups (
     team_id             INT NOT NULL REFERENCES rescue_teams(id),
     province_id         INT REFERENCES provinces(id),
     status              VARCHAR(20) NOT NULL DEFAULT 'in_progress'
-                        CHECK (status IN ('in_progress','completed','partial')),
+                        CHECK (status IN ('in_progress','completed','partial','cancelled')),
     stalled_alerted_at  DATETIME2 NULL,
     notes               NVARCHAR(MAX),
     created_at          DATETIME2 DEFAULT GETDATE(),
@@ -427,7 +429,7 @@ CREATE TABLE task_incident_reports (
     id              INT IDENTITY(1,1) PRIMARY KEY,
     task_group_id   INT NOT NULL REFERENCES task_groups(id),
     mission_id      INT NOT NULL REFERENCES missions(id),
-    reported_by     INT NOT NULL REFERENCES users(id),
+    reporter_id     INT NOT NULL REFERENCES users(id),
     report_type     VARCHAR(30) NOT NULL
                     CHECK (report_type IN ('stalled','unrescuable','need_support')),
     urgency         VARCHAR(20) NOT NULL DEFAULT 'medium'
@@ -473,7 +475,10 @@ CREATE INDEX idx_supply_req_status    ON mission_supply_requests(status);
 -- RELIEF DISTRIBUTIONS (Phân phối cứu trợ)
 CREATE TABLE relief_distributions (
     id INT IDENTITY(1,1) PRIMARY KEY,
+    distribution_type VARCHAR(10) NOT NULL DEFAULT 'issue' CHECK (distribution_type IN ('issue','return')),
+                                                        -- issue = xuất kho, return = nhập lại hàng dư
     request_id INT NULL REFERENCES rescue_requests(id),
+    team_id INT NULL REFERENCES rescue_teams(id),       -- đội nhận/trả hàng
     warehouse_id INT NOT NULL REFERENCES warehouses(id),
     item_id INT NOT NULL REFERENCES relief_items(id),
     quantity FLOAT NOT NULL,
@@ -515,16 +520,21 @@ CREATE TABLE vehicle_requests (
     notes                NVARCHAR(MAX),
 
     status               VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN (
-                             'pending',    
-                             'approved',   
-                             'fulfilled',  
-                             'rejected',   
-                             'cancelled'  
+                             'pending',    -- Chờ duyệt
+                             'approved',   -- Manager đã duyệt
+                             'fulfilled',  -- Xe đã được cấp/giao cho đội
+                             'returned',   -- Đội đã trả xe
+                             'rejected',   -- Bị từ chối
+                             'cancelled'   -- Đã hủy
                          )),
 
     -- Audit
     requested_by         INT NOT NULL REFERENCES users(id),   -- Coordinator/Manager tạo yêu cầu
     approved_by          INT REFERENCES users(id),             -- Manager duyệt
+    fulfilled_by         INT REFERENCES users(id),             -- Team leader xác nhận đã nhận xe
+    returned_by          INT REFERENCES users(id),             -- Team leader xác nhận đã trả xe
+    fulfilled_at         DATETIME2,
+    returned_confirmed_at DATETIME2,
 
     created_at           DATETIME2 DEFAULT GETDATE(),
     updated_at           DATETIME2 DEFAULT GETDATE()
