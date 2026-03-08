@@ -254,7 +254,7 @@ router.get("/:id", authenticate, async (req, res, next) => {
     const missionsRes = await query(
       `SELECT m.*,
               rr.tracking_code, rr.address, rr.latitude, rr.longitude,
-              rr.citizen_name, rr.citizen_phone, rr.victim_count, rr.description,
+              rr.citizen_name, rr.citizen_phone, rr.victim_count, ISNULL(rr.rescued_count, 0) as rescued_count, rr.description,
               rr.priority_score, rr.flood_severity, rr.support_type,
               it.name as incident_type, ul.name as urgency_level, ul.color as urgency_color,
               u.full_name as assigned_to_name
@@ -274,7 +274,7 @@ router.get("/:id", authenticate, async (req, res, next) => {
               u.full_name as reported_by_name,
               rr.tracking_code, rr.address
        FROM task_incident_reports ir
-       JOIN users u ON ir.reported_by = u.id
+       JOIN users u ON ir.reporter_id = u.id
        JOIN missions m ON ir.mission_id = m.id
        JOIN rescue_requests rr ON m.request_id = rr.id
        WHERE ir.task_group_id = @task_id
@@ -319,3 +319,149 @@ router.get("/:id", authenticate, async (req, res, next) => {
     next(err);
   }
 });
+
+// ─── PUT /api/tasks/:id/assign-member ────────────────────────────────────────
+// Leader assigns a sub-mission to a specific team member
+router.put("/:id/assign-member", authenticate, async (req, res, next) => {
+  try {
+    const { mission_id, user_id } = req.body;
+    if (!mission_id || !user_id) {
+      return res.status(400).json({ error: "Cần mission_id và user_id." });
+    }
+
+    // Verify mission belongs to this task
+    const check = await query(
+      "SELECT id FROM missions WHERE id = @mission_id AND task_group_id = @task_id",
+      { mission_id: parseInt(mission_id), task_id: parseInt(req.params.id) },
+    );
+    if (check.recordset.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "Sub-mission không thuộc task này." });
+    }
+
+    await query(
+      "UPDATE missions SET assigned_to_user_id = @user_id, updated_at = GETDATE() WHERE id = @id",
+      { user_id: parseInt(user_id), id: parseInt(mission_id) },
+    );
+
+    const io = req.app.get("io");
+    if (io)
+      io.emit("mission_assigned", {
+        mission_id: parseInt(mission_id),
+        user_id: parseInt(user_id),
+      });
+
+    res.json({ message: "Đã giao nhiệm vụ cho thành viên." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/tasks/:id/reports ─────────────────────────────────────────────
+// Member or Leader submits an incident report for a stalled/unrescuable sub-mission
+router.post("/:id/reports", authenticate, async (req, res, next) => {
+  try {
+    const { mission_id, report_type, urgency, support_type, description } =
+      req.body;
+    const taskId = parseInt(req.params.id);
+
+    if (!mission_id || !report_type || !description) {
+      return res
+        .status(400)
+        .json({ error: "Cần mission_id, report_type và description." });
+    }
+
+    // Verify mission belongs to task
+    const check = await query(
+      "SELECT id FROM missions WHERE id = @mission_id AND task_group_id = @task_id",
+      { mission_id: parseInt(mission_id), task_id: taskId },
+    );
+    if (check.recordset.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "Sub-mission không thuộc task này." });
+    }
+
+    // If unrescuable, mark mission as failed
+    if (report_type === "unrescuable") {
+      await query(
+        "UPDATE missions SET status = 'failed', updated_at = GETDATE() WHERE id = @id",
+        { id: parseInt(mission_id) },
+      );
+      // Also log in mission_logs
+      await query(
+        `INSERT INTO mission_logs (mission_id, user_id, action, description)
+         VALUES (@mid, @uid, 'failed', @desc)`,
+        {
+          mid: parseInt(mission_id),
+          uid: req.user.id,
+          desc: `Báo cáo không thể cứu hộ: ${description}`,
+        },
+      );
+    }
+
+    const reportRes = await query(
+      `INSERT INTO task_incident_reports
+         (task_group_id, mission_id, reporter_id, report_type, urgency, support_type, description)
+       OUTPUT INSERTED.id
+       VALUES (@task_id, @mission_id, @user_id, @type, @urgency, @support_type, @desc)`,
+      {
+        task_id: taskId,
+        mission_id: parseInt(mission_id),
+        user_id: req.user.id,
+        type: report_type,
+        urgency: urgency || "medium",
+        support_type: support_type || null,
+        desc: description,
+      },
+    );
+
+    // Notify coordinator via socket
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task_incident_report", {
+        task_group_id: taskId,
+        report_id: reportRes.recordset[0].id,
+        urgency: urgency || "medium",
+        report_type,
+      });
+    }
+
+    res.status(201).json({
+      id: reportRes.recordset[0].id,
+      message: "Đã gửi báo cáo sự cố.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PUT /api/tasks/:id/reports/:reportId/resolve ────────────────────────────
+// Coordinator acknowledges or resolves an incident report
+router.put(
+  "/:id/reports/:reportId/resolve",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const { status, resolution_note } = req.body; // acknowledged | resolved
+      await query(
+        `UPDATE task_incident_reports
+         SET status = @status, resolved_by = @user_id, resolved_at = GETDATE(),
+             resolution_note = @note
+         WHERE id = @id AND task_group_id = @task_id`,
+        {
+          status: status || "acknowledged",
+          user_id: req.user.id,
+          note: resolution_note || null,
+          id: parseInt(req.params.reportId),
+          task_id: parseInt(req.params.id),
+        },
+      );
+      res.json({ message: "Đã cập nhật trạng thái báo cáo." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
