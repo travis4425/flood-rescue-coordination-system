@@ -277,6 +277,7 @@ router.get("/track/:trackingCode", async (req, res, next) => {
               rr.latitude, rr.longitude, rr.address, rr.victim_count,
               rr.support_type, rr.priority_score, rr.flood_severity,
               rr.citizen_confirmed, rr.citizen_confirmed_at,
+              rr.rescue_team_confirmed,
               rr.created_at, rr.verified_at, rr.assigned_at, rr.started_at, rr.completed_at,
               rr.result_notes, rr.rescued_count, rr.reject_reason,
               it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
@@ -395,8 +396,18 @@ router.put("/track/:trackingCode/rescued-by-other", async (req, res, next) => {
         { count: newCount, id },
       );
 
+      // Abort any active mission assigned to this request
+      await query(
+        `UPDATE missions SET status = 'aborted', updated_at = GETDATE()
+         WHERE request_id = @req_id AND status NOT IN ('completed','failed','aborted')`,
+        { req_id: id },
+      );
+
       const io = req.app.get("io");
-      if (io) io.emit("request_updated", { id, status: "cancelled" });
+      if (io) {
+        io.emit("request_updated", { id, status: "cancelled" });
+        io.emit("mission_updated", { request_id: id, status: "aborted" });
+      }
 
       return res.json({
         confirmed: true,
@@ -521,7 +532,7 @@ router.get("/map", async (req, res, next) => {
        LEFT JOIN provinces p ON rr.province_id = p.id
        LEFT JOIN districts d ON rr.district_id = d.id
        ${where}
-       ORDER BY rr.priority_score DESC, rr.created_at DESC`,
+       ORDER BY rr.created_at DESC, rr.priority_score DESC`,
       params,
     );
 
