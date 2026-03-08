@@ -465,3 +465,152 @@ router.put(
     }
   },
 );
+
+// ─── POST /api/tasks/:id/dispatch-support ────────────────────────────────────
+// Coordinator dispatches additional team to help with a task
+router.post(
+  "/:id/dispatch-support",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const { team_id, request_ids, notes } = req.body;
+      const taskId = parseInt(req.params.id);
+
+      if (!team_id || !request_ids || request_ids.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "Cần team_id và danh sách request_ids." });
+      }
+
+      // Verify task exists
+      const taskCheck = await query(
+        "SELECT id FROM task_groups WHERE id = @id",
+        { id: taskId },
+      );
+      if (taskCheck.recordset.length === 0) {
+        return res.status(404).json({ error: "Không tìm thấy task." });
+      }
+
+      // Add new sub-missions (same task_group) for the support team
+      for (const requestId of request_ids) {
+        await query(
+          `INSERT INTO missions (request_id, team_id, status, task_group_id, notes)
+           VALUES (@req_id, @team_id, 'assigned', @task_id, @notes)`,
+          {
+            req_id: parseInt(requestId),
+            team_id: parseInt(team_id),
+            task_id: taskId,
+            notes: notes ? `[Hỗ trợ bổ sung] ${notes}` : "[Hỗ trợ bổ sung]",
+          },
+        );
+      }
+
+      // Set support team to on_mission
+      await query(
+        "UPDATE rescue_teams SET status = 'on_mission', updated_at = GETDATE() WHERE id = @id",
+        { id: parseInt(team_id) },
+      );
+
+      // Log support dispatch in task_incident_reports or as a note
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("task_support_dispatched", {
+          task_group_id: taskId,
+          team_id: parseInt(team_id),
+        });
+      }
+
+      res.status(201).json({ message: "Đã điều thêm đội hỗ trợ vào task." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── PUT /api/tasks/:id/confirm-complete ─────────────────────────────────────
+// Coordinator confirms task closure → updates request statuses + emits event
+router.put(
+  "/:id/confirm-complete",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const taskId = parseInt(req.params.id);
+
+      // Verify all sub-missions are in terminal state
+      const check = await query(
+        `SELECT COUNT(*) as total,
+                SUM(CASE WHEN status IN ('completed','failed','aborted') THEN 1 ELSE 0 END) as done
+         FROM missions WHERE task_group_id = @task_id`,
+        { task_id: taskId },
+      );
+      const { total, done } = check.recordset[0];
+      if (total === 0 || done < total) {
+        return res
+          .status(400)
+          .json({ error: "Còn nhiệm vụ chưa hoàn thành, chưa thể đóng task." });
+      }
+
+      // Determine final status
+      const failedCheck = await query(
+        `SELECT COUNT(*) as failed FROM missions WHERE task_group_id = @task_id AND status = 'failed'`,
+        { task_id: taskId },
+      );
+      const finalStatus =
+        failedCheck.recordset[0].failed > 0 ? "partial" : "completed";
+
+      await query(
+        "UPDATE task_groups SET status = @status, updated_at = GETDATE() WHERE id = @id",
+        { status: finalStatus, id: taskId },
+      );
+
+      // Close rescue_requests for completed missions
+      await query(
+        `UPDATE rr SET rr.status = 'completed', rr.completed_at = GETDATE(), rr.updated_at = GETDATE()
+         FROM rescue_requests rr
+         JOIN missions m ON rr.id = m.request_id
+         WHERE m.task_group_id = @task_id AND m.status = 'completed' AND rr.status != 'completed'`,
+        { task_id: taskId },
+      );
+
+      const io = req.app.get("io");
+      if (io)
+        io.emit("task_updated", { task_group_id: taskId, status: finalStatus });
+
+      res.json({ message: "Đã xác nhận đóng task.", status: finalStatus });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── PUT /api/tasks/:id/status ────────────────────────────────────────────────
+// Auto-check and update task status (called after mission status updates)
+// Also can be called manually by coordinator to force-complete/partial
+router.put(
+  "/:id/status",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const { status } = req.body;
+      const taskId = parseInt(req.params.id);
+
+      if (!["in_progress", "completed", "partial"].includes(status)) {
+        return res.status(400).json({ error: "Trạng thái không hợp lệ." });
+      }
+
+      await query(
+        "UPDATE task_groups SET status = @status, updated_at = GETDATE() WHERE id = @id",
+        { status, id: taskId },
+      );
+
+      res.json({ message: `Đã cập nhật trạng thái task: ${status}` });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+module.exports = router;
