@@ -92,7 +92,7 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin", "manager", "coordinator"),
   async (req, res, next) => {
     try {
       const {
