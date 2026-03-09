@@ -68,7 +68,7 @@ CREATE TABLE users (
     avatar_url VARCHAR(500),
     role VARCHAR(30) NOT NULL CHECK (role IN (
         'admin', 'manager',
-        'coordinator', 'rescue_team', 'warehouse_keeper'
+        'coordinator', 'rescue_team'
     )),
     region_id INT REFERENCES regions(id),
     province_id INT REFERENCES provinces(id),
@@ -297,7 +297,6 @@ CREATE TABLE warehouses (
     capacity_tons FLOAT,
     manager_id INT REFERENCES users(id),            -- manager tỉnh (kho trung tâm)
     coordinator_id INT REFERENCES users(id),        -- coordinator phụ trách (kho vệ tinh)
-    keeper_id INT REFERENCES users(id),             -- nguoi kiem kho (warehouse_keeper role)
     phone VARCHAR(20),
     warehouse_type VARCHAR(20) DEFAULT 'central' CHECK (warehouse_type IN ('central','satellite')),
     status VARCHAR(20) DEFAULT 'active',
@@ -448,30 +447,6 @@ CREATE INDEX idx_incident_task    ON task_incident_reports(task_group_id);
 CREATE INDEX idx_incident_mission ON task_incident_reports(mission_id);
 CREATE INDEX idx_incident_status  ON task_incident_reports(status);
 
--- *21. MISSION SUPPLY REQUESTS (Phieu xuat kho theo nhiem vu)
-
-CREATE TABLE mission_supply_requests (
-    id              INT IDENTITY(1,1) PRIMARY KEY,
-    mission_id      INT NOT NULL REFERENCES missions(id),
-    warehouse_id    INT NOT NULL REFERENCES warehouses(id),
-    vehicle_id      INT REFERENCES vehicles(id),
-    supply_notes    NVARCHAR(MAX),
-    status          VARCHAR(20) NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','issued','returned','verified')),
-    requested_by    INT NOT NULL REFERENCES users(id),
-    issued_by       INT REFERENCES users(id),
-    verified_by     INT REFERENCES users(id),
-    issued_at       DATETIME2,
-    returned_at     DATETIME2,
-    verified_at     DATETIME2,
-    keeper_notes    NVARCHAR(500),
-    created_at      DATETIME2 DEFAULT GETDATE(),
-    updated_at      DATETIME2 DEFAULT GETDATE()
-);
-CREATE INDEX idx_supply_req_mission   ON mission_supply_requests(mission_id);
-CREATE INDEX idx_supply_req_warehouse ON mission_supply_requests(warehouse_id);
-CREATE INDEX idx_supply_req_status    ON mission_supply_requests(status);
-
 -- RELIEF DISTRIBUTIONS (Phân phối cứu trợ)
 CREATE TABLE relief_distributions (
     id INT IDENTITY(1,1) PRIMARY KEY,
@@ -545,5 +520,7 @@ CREATE INDEX idx_vreq_province ON vehicle_requests(province_id);
 CREATE INDEX idx_vreq_requester ON vehicle_requests(requested_by);
 CREATE INDEX idx_vreq_created  ON vehicle_requests(created_at DESC);
 
+-- returned_at: đánh dấu thời điểm team trả lại vật tư đã nhận (trên bản ghi distribution_type='issue')
+ALTER TABLE relief_distributions ADD returned_at DATETIME2 NULL;
 
 GO
