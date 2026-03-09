@@ -10,19 +10,75 @@ INSERT INTO regions (id, name, code, description) VALUES
   (3, N'Miền Nam', 'south', N'Các tỉnh phía Nam');
 SET IDENTITY_INSERT regions OFF;
 
--- 2. PROVINCES (10)
+-- 2. PROVINCES (63 - đầy đủ 63 tỉnh/thành phố Việt Nam)
 SET IDENTITY_INSERT provinces ON;
 INSERT INTO provinces (id, region_id, name, code, latitude, longitude) VALUES
-  (1, 1, N'Hà Nội', 'hanoi', 21.0285, 105.8542),
-  (2, 2, N'Thừa Thiên Huế', 'hue', 16.4637, 107.5909),
-  (3, 2, N'Quảng Nam', 'quangnam', 15.5394, 108.0191),
-  (4, 2, N'Quảng Bình', 'quangbinh', 17.4690, 106.6222),
-  (5, 2, N'Đà Nẵng', 'danang', 16.0544, 108.2022),
-  (6, 2, N'Quảng Trị', 'quangtri', 16.7500, 107.1854),
-  (7, 2, N'Hà Tĩnh', 'hatinh', 18.3560, 105.8877),
-  (8, 2, N'Nghệ An', 'nghean', 18.6789, 105.6813),
-  (9, 3, N'TP Hồ Chí Minh', 'hcm', 10.8231, 106.6297),
-  (10, 3, N'Cần Thơ', 'cantho', 10.0452, 105.7469);
+  -- Miền Bắc (region_id=1) - 25 tỉnh/thành
+  (1,  1, N'Hà Nội',           'hanoi',      21.0285, 105.8542),
+  (11, 1, N'Hải Phòng',        'haiphong',   20.8449, 106.6881),
+  (12, 1, N'Quảng Ninh',       'quangninh',  21.0064, 107.2925),
+  (13, 1, N'Hải Dương',        'haiduong',   20.9374, 106.3145),
+  (14, 1, N'Hưng Yên',         'hungyen',    20.6463, 106.0511),
+  (15, 1, N'Bắc Ninh',         'bacninh',    21.1862, 106.0763),
+  (16, 1, N'Vĩnh Phúc',        'vinhphuc',   21.3609, 105.5474),
+  (17, 1, N'Hà Nam',           'hanam',      20.5398, 105.9230),
+  (18, 1, N'Nam Định',         'namdinh',    20.4388, 106.1621),
+  (19, 1, N'Thái Bình',        'thaibinh',   20.4502, 106.3365),
+  (20, 1, N'Ninh Bình',        'ninhbinh',   20.2506, 105.9745),
+  (21, 1, N'Bắc Giang',        'bacgiang',   21.2731, 106.1946),
+  (22, 1, N'Phú Thọ',          'phutho',     21.3954, 105.2272),
+  (23, 1, N'Thái Nguyên',      'thainguyen', 21.5943, 105.8480),
+  (24, 1, N'Tuyên Quang',      'tuyenquang', 21.8237, 105.2144),
+  (25, 1, N'Hà Giang',         'hagiang',    22.8026, 104.9784),
+  (26, 1, N'Cao Bằng',         'caobang',    22.6666, 106.2639),
+  (27, 1, N'Bắc Kạn',          'backan',     22.1471, 105.8344),
+  (28, 1, N'Lạng Sơn',         'langson',    21.8537, 106.7615),
+  (29, 1, N'Lào Cai',          'laocai',     22.4809, 103.9755),
+  (30, 1, N'Yên Bái',          'yenbai',     21.7051, 104.8997),
+  (31, 1, N'Sơn La',           'sonla',      21.3272, 103.9144),
+  (32, 1, N'Điện Biên',        'dienbien',   21.3860, 103.0230),
+  (33, 1, N'Lai Châu',         'laichau',    22.3962, 103.4531),
+  (34, 1, N'Hòa Bình',         'hoabinh',    20.8133, 105.3383),
+  -- Miền Trung (region_id=2) - 19 tỉnh/thành
+  (2,  2, N'Thừa Thiên Huế',   'hue',        16.4637, 107.5909),
+  (3,  2, N'Quảng Nam',        'quangnam',   15.5394, 108.0191),
+  (4,  2, N'Quảng Bình',       'quangbinh',  17.4690, 106.6222),
+  (5,  2, N'Đà Nẵng',          'danang',     16.0544, 108.2022),
+  (6,  2, N'Quảng Trị',        'quangtri',   16.7500, 107.1854),
+  (7,  2, N'Hà Tĩnh',          'hatinh',     18.3560, 105.8877),
+  (8,  2, N'Nghệ An',          'nghean',     18.6789, 105.6813),
+  (35, 2, N'Thanh Hóa',        'thanhhoa',   19.8077, 105.7764),
+  (36, 2, N'Quảng Ngãi',       'quangngai',  15.1200, 108.8044),
+  (37, 2, N'Bình Định',        'binhdinh',   13.7820, 109.2197),
+  (38, 2, N'Phú Yên',          'phuyen',     13.0882, 109.0929),
+  (39, 2, N'Khánh Hòa',        'khanhhoa',   12.2388, 109.1967),
+  (40, 2, N'Ninh Thuận',       'ninhthuan',  11.5654, 108.9881),
+  (41, 2, N'Bình Thuận',       'binhthuan',  11.0904, 108.0721),
+  (42, 2, N'Kon Tum',          'kontum',     14.3524, 107.9917),
+  (43, 2, N'Gia Lai',          'gialai',     13.9810, 108.0003),
+  (44, 2, N'Đắk Lắk',          'daklak',     12.6667, 108.0503),
+  (45, 2, N'Đắk Nông',         'daknong',    12.0040, 107.6978),
+  (46, 2, N'Lâm Đồng',         'lamdong',    11.9405, 108.4583),
+  -- Miền Nam (region_id=3) - 19 tỉnh/thành
+  (9,  3, N'TP Hồ Chí Minh',   'hcm',        10.8231, 106.6297),
+  (10, 3, N'Cần Thơ',          'cantho',     10.0452, 105.7469),
+  (47, 3, N'Bình Phước',       'binhphuoc',  11.7512, 106.7235),
+  (48, 3, N'Tây Ninh',         'tayninh',    11.3103, 106.0982),
+  (49, 3, N'Bình Dương',       'binhduong',  11.3254, 106.4770),
+  (50, 3, N'Đồng Nai',         'dongnai',    11.0686, 107.1676),
+  (51, 3, N'Bà Rịa-Vũng Tàu', 'brvt',       10.5417, 107.2431),
+  (52, 3, N'Long An',          'longan',     10.6956, 106.2431),
+  (53, 3, N'Tiền Giang',       'tiengiang',  10.3600, 106.3650),
+  (54, 3, N'Bến Tre',          'bentre',     10.2420, 106.3751),
+  (55, 3, N'Trà Vinh',         'travinh',    9.9477,  106.3416),
+  (56, 3, N'Vĩnh Long',        'vinhlong',   10.2538, 105.9722),
+  (57, 3, N'Đồng Tháp',        'dongthap',   10.4938, 105.6882),
+  (58, 3, N'An Giang',         'angiang',    10.5221, 105.1260),
+  (59, 3, N'Kiên Giang',       'kiengiang',  9.8249,  105.1259),
+  (60, 3, N'Hậu Giang',        'haugiang',   9.7574,  105.6413),
+  (61, 3, N'Sóc Trăng',        'soctrang',   9.6025,  105.9739),
+  (62, 3, N'Bạc Liêu',         'baclieu',    9.2941,  105.7277),
+  (63, 3, N'Cà Mau',           'camau',      9.1769,  105.1500);
 SET IDENTITY_INSERT provinces OFF;
 
 -- 3. DISTRICTS (21)
@@ -159,12 +215,57 @@ INSERT INTO vehicles (id, name, plate_number, type, capacity, province_id, team_
   (8, N'Xe tải HUE-T01', '75A-20001', 'truck', 15, 2, NULL, 'maintenance');
 SET IDENTITY_INSERT vehicles OFF;
 
--- 12. WAREHOUSES (3)
+-- 12. WAREHOUSES (35 = 17 kho trung tâm + 18 kho vệ tinh, phủ toàn quốc)
 SET IDENTITY_INSERT warehouses ON;
-INSERT INTO warehouses (id, name, address, province_id, district_id, latitude, longitude, capacity_tons, manager_id, phone) VALUES
-  (1, N'Kho Cứu Trợ Huế', N'123 Lê Lợi, TP Huế', 2, 1, 16.4637, 107.5909, 50.0, 3, '0900200001'),
-  (2, N'Kho Cứu Trợ Hội An', N'45 Trần Phú, Hội An', 3, 5, 15.8801, 108.3380, 30.0, NULL, '0900200002'),
-  (3, N'Kho Cứu Trợ Đà Nẵng', N'78 Nguyễn Văn Linh, Hải Châu', 5, 12, 16.0471, 108.2196, 40.0, NULL, '0900200003');
+INSERT INTO warehouses (id, name, address, province_id, district_id, latitude, longitude, capacity_tons, manager_id, phone, warehouse_type) VALUES
+
+  -- ====== KHO TRUNG TÂM (1 kho/tỉnh trọng điểm) ======
+  -- Miền Bắc
+  (1,  N'Kho TT Hà Nội',        N'15 Trần Hưng Đạo, Hoàn Kiếm, Hà Nội',           1,  NULL, 21.0285, 105.8542, 150.0, 3,    '0900100001', 'central'),
+  (2,  N'Kho TT Hải Phòng',     N'45 Lê Lợi, Hồng Bàng, Hải Phòng',               11, NULL, 20.8449, 106.6881, 100.0, NULL, '0900100002', 'central'),
+  (3,  N'Kho TT Thanh Hóa',     N'30 Quang Trung, TP Thanh Hóa',                    35, NULL, 19.8077, 105.7764,  80.0, NULL, '0900100003', 'central'),
+  (4,  N'Kho TT Nghệ An',       N'88 Lê Lợi, TP Vinh, Nghệ An',                    8,  NULL, 18.6789, 105.6813,  90.0, NULL, '0900100004', 'central'),
+  (5,  N'Kho TT Hà Tĩnh',       N'30 Phan Đình Phùng, TP Hà Tĩnh',                 7,  NULL, 18.3560, 105.8877,  60.0, NULL, '0900100005', 'central'),
+  (6,  N'Kho TT Quảng Bình',    N'25 Lý Thường Kiệt, TP Đồng Hới',                 4,  NULL, 17.4690, 106.6222,  70.0, NULL, '0900100006', 'central'),
+  (7,  N'Kho TT Quảng Trị',     N'12 Hùng Vương, TP Đông Hà, Quảng Trị',           6,  NULL, 16.8167, 107.0963,  55.0, NULL, '0900100007', 'central'),
+  -- Miền Trung
+  (8,  N'Kho TT Thừa Thiên Huế',N'123 Lê Lợi, TP Huế',                             2,  1,    16.4637, 107.5909,  80.0, 3,    '0900200001', 'central'),
+  (9,  N'Kho TT Đà Nẵng',       N'78 Nguyễn Văn Linh, Hải Châu, Đà Nẵng',          5,  12,   16.0471, 108.2196,  90.0, NULL, '0900200003', 'central'),
+  (10, N'Kho TT Quảng Nam',      N'15 Trần Phú, TP Tam Kỳ, Quảng Nam',              3,  NULL, 15.5692, 108.4720,  60.0, NULL, '0900200002', 'central'),
+  (11, N'Kho TT Quảng Ngãi',    N'20 Hùng Vương, TP Quảng Ngãi',                   36, NULL, 15.1200, 108.8044,  50.0, NULL, '0900100008', 'central'),
+  (12, N'Kho TT Bình Định',     N'50 Tây Sơn, TP Quy Nhơn, Bình Định',             37, NULL, 13.7820, 109.2197,  60.0, NULL, '0900100009', 'central'),
+  (13, N'Kho TT Khánh Hòa',     N'100 Trần Phú, TP Nha Trang, Khánh Hòa',          39, NULL, 12.2388, 109.1967,  55.0, NULL, '0900100010', 'central'),
+  -- Miền Nam
+  (14, N'Kho TT TP.HCM',        N'200 Đinh Tiên Hoàng, Bình Thạnh, TP.HCM',        9,  NULL, 10.8014, 106.7177, 200.0, NULL, '0900100011', 'central'),
+  (15, N'Kho TT Cần Thơ',       N'55 Hoà Bình, Ninh Kiều, Cần Thơ',                10, NULL, 10.0452, 105.7469, 120.0, NULL, '0900100012', 'central'),
+  (16, N'Kho TT An Giang',       N'30 Ngô Gia Tự, TP Long Xuyên, An Giang',         58, NULL, 10.3785, 105.4386,  80.0, NULL, '0900100013', 'central'),
+  (17, N'Kho TT Kiên Giang',    N'5 Lý Tự Trọng, TP Rạch Giá, Kiên Giang',         59, NULL,  9.9804, 105.0900,  70.0, NULL, '0900100014', 'central'),
+
+  -- ====== KHO VỆ TINH (rải rác gần vùng nguy hiểm) ======
+  -- Vệ tinh miền Bắc
+  (18, N'Kho VS Nam Định',       N'Khu CN Nam Định, TP Nam Định',                   18, NULL, 20.4388, 106.1621,  25.0, NULL, '0900300001', 'satellite'),
+  (19, N'Kho VS Thái Bình',      N'Xã Thái Thụy, Thái Bình',                        19, NULL, 20.5400, 106.5500,  20.0, NULL, '0900300002', 'satellite'),
+  (20, N'Kho VS Ninh Bình',      N'Huyện Kim Sơn, Ninh Bình',                       20, NULL, 20.0830, 106.1370,  20.0, NULL, '0900300003', 'satellite'),
+  -- Vệ tinh miền Trung Bắc
+  (21, N'Kho VS Quỳnh Lưu',     N'Huyện Quỳnh Lưu, Nghệ An',                       8,  NULL, 19.1100, 105.6300,  18.0, NULL, '0900300004', 'satellite'),
+  (22, N'Kho VS Nghi Xuân',      N'Huyện Nghi Xuân, Hà Tĩnh',                       7,  NULL, 18.5000, 105.7500,  15.0, NULL, '0900300005', 'satellite'),
+  (23, N'Kho VS Bố Trạch',       N'Huyện Bố Trạch, Quảng Bình',                     4,  NULL, 17.6200, 106.5300,  18.0, NULL, '0900300006', 'satellite'),
+  (24, N'Kho VS Gio Linh',       N'Huyện Gio Linh, Quảng Trị',                      6,  NULL, 16.9600, 107.0500,  15.0, NULL, '0900300007', 'satellite'),
+  -- Vệ tinh Huế - Đà Nẵng
+  (25, N'Kho VS Phong Điền',     N'Huyện Phong Điền, Thừa Thiên Huế',               2,  3,    16.5348, 107.3483,  20.0, NULL, '0900300008', 'satellite'),
+  (26, N'Kho VS Hương Thủy',     N'Thị xã Hương Thủy, Thừa Thiên Huế',              2,  NULL, 16.3800, 107.6500,  18.0, NULL, '0900300009', 'satellite'),
+  (27, N'Kho VS Liên Chiểu',     N'Quận Liên Chiểu, Đà Nẵng',                       5,  NULL, 16.0900, 108.1400,  22.0, NULL, '0900300010', 'satellite'),
+  (28, N'Kho VS Hội An',         N'45 Trần Phú, TP Hội An, Quảng Nam',              3,  5,    15.8801, 108.3380,  20.0, NULL, '0900300011', 'satellite'),
+  (29, N'Kho VS Đại Lộc',        N'Huyện Đại Lộc, Quảng Nam',                       3,  6,    15.8548, 108.0590,  15.0, NULL, '0900300012', 'satellite'),
+  -- Vệ tinh miền Nam Trung Bộ
+  (30, N'Kho VS Đức Phổ',        N'Huyện Đức Phổ, Quảng Ngãi',                      36, NULL, 14.8800, 108.9500,  15.0, NULL, '0900300013', 'satellite'),
+  (31, N'Kho VS Tuy Phước',      N'Huyện Tuy Phước, Bình Định',                     37, NULL, 13.6800, 109.1800,  18.0, NULL, '0900300014', 'satellite'),
+  -- Vệ tinh Đồng bằng sông Cửu Long
+  (32, N'Kho VS Long An',        N'Huyện Tân An, Long An',                           52, NULL, 10.5353, 106.3986,  22.0, NULL, '0900300015', 'satellite'),
+  (33, N'Kho VS Đồng Tháp',      N'TP Cao Lãnh, Đồng Tháp',                         57, NULL, 10.4595, 105.6384,  25.0, NULL, '0900300016', 'satellite'),
+  (34, N'Kho VS Vĩnh Long',      N'TP Vĩnh Long, Vĩnh Long',                        56, NULL, 10.2538, 105.9722,  20.0, NULL, '0900300017', 'satellite'),
+  (35, N'Kho VS Hậu Giang',      N'TP Vị Thanh, Hậu Giang',                         60, NULL,  9.7883, 105.4660,  18.0, NULL, '0900300018', 'satellite');
+
 SET IDENTITY_INSERT warehouses OFF;
 
 -- 13. RELIEF ITEMS (8)
@@ -381,7 +482,7 @@ UPDATE coordinator_regions SET current_workload = 1 WHERE user_id = 9;  -- coord
 -- ============================================================
 -- SEED DATA SUMMARY
 -- ============================================================
--- Regions:       3   | Provinces:    10  | Districts:    21
+-- Regions:       3   | Provinces:    63  | Districts:    21
 -- Wards:         12  | Users:        17  | Coord Regions: 5
 -- Incident Types: 6  | Urgency:      5   | Teams:         5
 -- Team Members:  8   | Vehicles:     8   | Warehouses:    3
@@ -397,13 +498,15 @@ UPDATE coordinator_regions SET current_workload = 1 WHERE user_id = 9;  -- coord
 --
 -- All passwords: 123456
 
--- 13. RELIEF DISTRIBUTIONS (5 records)
-INSERT INTO relief_distributions (request_id, warehouse_id, item_id, quantity, distributed_by, notes) VALUES
-  (1, 1, 1, 100, 3, N'Cấp phát nước uống cho vùng ngập Hương Thủy'),
-  (1, 1, 2, 50, 3, N'Cấp phát mì gói cho hộ dân'),
-  (2, 1, 3, 30, 3, N'Phát chăn cho 30 hộ dân'),
-  (5, 2, 1, 200, 7, N'Cấp nước cho khu vực Đại Lộc'),
-  (5, 2, 4, 20, 7, N'Phát bộ sơ cứu cho 20 hộ');
+-- 13. RELIEF DISTRIBUTIONS (7 records)
+INSERT INTO relief_distributions (distribution_type, request_id, warehouse_id, item_id, quantity, distributed_by, notes) VALUES
+  ('issue', 1, 8, 1, 100, 3, N'Cấp phát gạo cho vùng ngập Hương Thủy'),
+  ('issue', 1, 8, 2,  50, 3, N'Cấp phát mì gói cho hộ dân'),
+  ('issue', 2, 8, 3,  30, 3, N'Phát chăn cho 30 hộ dân'),
+  ('issue', 5, 28, 1, 200, 7, N'Cấp gạo cho khu vực Hội An sau lũ'),
+  ('issue', 5, 28, 4,  20, 7, N'Phát bộ sơ cứu cho 20 hộ'),
+  ('return', NULL, 8, 1,  15, 3, N'Gạo dư sau đợt cứu trợ tháng trước'),
+  ('return', NULL, 28, 2,  10, 7, N'Mì gói đội Đại Lộc trả về');
 
 -- Update citizen_confirmed for completed requests
 UPDATE rescue_requests SET citizen_confirmed = 1, citizen_confirmed_at = GETDATE() WHERE id = 1;
