@@ -248,10 +248,10 @@ router.get("/relief-items", authenticate, async (req, res, next) => {
 router.get(
   "/distributions",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin", "manager", "coordinator"),
   async (req, res, next) => {
     try {
-      const { warehouse_id, request_id } = req.query;
+      const { warehouse_id, request_id, distribution_type } = req.query;
       let where = "WHERE 1=1";
       const params = {};
       if (warehouse_id) {
@@ -261,6 +261,25 @@ router.get(
       if (request_id) {
         where += " AND rd.request_id = @request_id";
         params.request_id = parseInt(request_id);
+      }
+      if (distribution_type) {
+        where += " AND rd.distribution_type = @distribution_type";
+        params.distribution_type = distribution_type;
+      }
+      // Coordinator chỉ thấy distributions từ kho trong tỉnh được phân công
+      if (req.user.role === "coordinator") {
+        where += ` AND w.province_id IN (
+          SELECT province_id FROM coordinator_regions
+          WHERE user_id = @coord_user_id AND province_id IS NOT NULL
+        )`;
+        params.coord_user_id = req.user.id;
+      }
+      // Manager chỉ thấy distributions từ kho trong vùng của mình
+      if (req.user.role === "manager" && req.user.region_id) {
+        where += ` AND w.province_id IN (
+          SELECT id FROM provinces WHERE region_id = @region_id
+        )`;
+        params.region_id = req.user.region_id;
       }
 
       const result = await query(
@@ -279,6 +298,52 @@ router.get(
         params,
       );
       res.json(result.recordset);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/distributions/:id/return — Xác nhận team đã trả lại vật tư
+router.put(
+  "/distributions/:id/return",
+  authenticate,
+  authorize("admin", "manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const dist = await query(
+        `SELECT rd.id, rd.distribution_type, rd.returned_at, w.province_id, w.coordinator_id, w.manager_id
+         FROM relief_distributions rd
+         JOIN warehouses w ON rd.warehouse_id = w.id
+         WHERE rd.id = @id`,
+        { id },
+      );
+      if (!dist.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = dist.recordset[0];
+      if (row.distribution_type !== "issue") {
+        return res.status(400).json({ error: "Chỉ xác nhận trả cho bản ghi xuất kho (issue)." });
+      }
+      if (row.returned_at) {
+        return res.status(400).json({ error: "Bản ghi này đã được đánh dấu trả rồi." });
+      }
+      // Coordinator chỉ được xác nhận kho trong tỉnh mình
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions
+           WHERE user_id = @uid AND province_id = @prov`,
+          { uid: req.user.id, prov: row.province_id },
+        );
+        if (!allowed.recordset.length) {
+          return res.status(403).json({ error: "Bạn không có quyền xác nhận kho này." });
+        }
+      }
+
+      await query(
+        `UPDATE relief_distributions SET returned_at = GETDATE() WHERE id = @id`,
+        { id },
+      );
+      res.json({ message: "Đã xác nhận trả vật tư." });
     } catch (err) {
       next(err);
     }
