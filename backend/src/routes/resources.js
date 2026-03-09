@@ -112,15 +112,36 @@ router.put(
 
 // ======== WAREHOUSES ========
 
+// GET /api/resources/warehouses/map — Public, chỉ trả tọa độ + tên (cho bản đồ công khai)
+router.get("/warehouses/map", async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT w.id, w.name, w.address, w.latitude, w.longitude,
+              w.warehouse_type, w.capacity_tons,
+              p.name as province_name
+       FROM warehouses w
+       LEFT JOIN provinces p ON w.province_id = p.id
+       WHERE w.status = 'active' AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL
+       ORDER BY w.warehouse_type, w.name`,
+    );
+    res.json(result.recordset);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/warehouses", authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT w.*, p.name as province_name, d.name as district_name, u.full_name as manager_name
+      `SELECT w.*, p.name as province_name, d.name as district_name,
+              um.full_name as manager_name,
+              uc.full_name as coordinator_name
        FROM warehouses w
        LEFT JOIN provinces p ON w.province_id = p.id
        LEFT JOIN districts d ON w.district_id = d.id
-       LEFT JOIN users u ON w.manager_id = u.id
-       ORDER BY w.name`,
+       LEFT JOIN users um ON w.manager_id = um.id
+       LEFT JOIN users uc ON w.coordinator_id = uc.id
+       ORDER BY w.warehouse_type, w.name`,
     );
     res.json(result.recordset);
   } catch (err) {
@@ -135,34 +156,30 @@ router.post(
   async (req, res, next) => {
     try {
       const {
-        name,
-        address,
-        province_id,
-        district_id,
-        latitude,
-        longitude,
-        capacity_tons,
-        manager_id,
-        phone,
+        name, address, province_id, district_id, latitude, longitude,
+        capacity_tons, manager_id, coordinator_id, phone, warehouse_type,
       } = req.body;
       const result = await query(
-        `INSERT INTO warehouses (name, address, province_id, district_id, latitude, longitude, capacity_tons, manager_id, phone)
-       OUTPUT INSERTED.id VALUES (@name, @address, @province_id, @district_id, @lat, @lng, @cap, @manager_id, @phone)`,
+        `INSERT INTO warehouses (name, address, province_id, district_id, latitude, longitude,
+                                 capacity_tons, manager_id, coordinator_id, phone, warehouse_type)
+         OUTPUT INSERTED.id
+         VALUES (@name, @address, @province_id, @district_id, @lat, @lng,
+                 @cap, @manager_id, @coordinator_id, @phone, @warehouse_type)`,
         {
           name,
-          address,
+          address: address || null,
           province_id: parseInt(province_id),
           district_id: district_id ? parseInt(district_id) : null,
           lat: parseFloat(latitude) || null,
           lng: parseFloat(longitude) || null,
           cap: parseFloat(capacity_tons) || 0,
           manager_id: manager_id ? parseInt(manager_id) : null,
+          coordinator_id: coordinator_id ? parseInt(coordinator_id) : null,
           phone: phone || null,
+          warehouse_type: warehouse_type || 'central',
         },
       );
-      res
-        .status(201)
-        .json({ id: result.recordset[0].id, message: "Thêm kho thành công." });
+      res.status(201).json({ id: result.recordset[0].id, message: "Thêm kho thành công." });
     } catch (err) {
       next(err);
     }
@@ -249,12 +266,14 @@ router.get(
       const result = await query(
         `SELECT rd.*, ri.name as item_name, ri.unit as item_unit, ri.category,
               w.name as warehouse_name, u.full_name as distributed_by_name,
-              rr.tracking_code, rr.citizen_name
+              rr.tracking_code, rr.citizen_name,
+              rt.name as team_name
        FROM relief_distributions rd
        JOIN relief_items ri ON rd.item_id = ri.id
        JOIN warehouses w ON rd.warehouse_id = w.id
        JOIN users u ON rd.distributed_by = u.id
        LEFT JOIN rescue_requests rr ON rd.request_id = rr.id
+       LEFT JOIN rescue_teams rt ON rd.team_id = rt.id
        ${where}
        ORDER BY rd.created_at DESC`,
         params,
@@ -269,43 +288,56 @@ router.get(
 router.post(
   "/distributions",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin", "manager", "coordinator"),
   async (req, res, next) => {
     try {
-      const { request_id, warehouse_id, item_id, quantity, notes } = req.body;
+      const { request_id, team_id, warehouse_id, item_id, quantity, notes, distribution_type } = req.body;
+      const dtype = distribution_type === 'return' ? 'return' : 'issue';
       if (!warehouse_id || !item_id || !quantity) {
-        return res
-          .status(400)
-          .json({ error: "Thiếu thông tin: warehouse_id, item_id, quantity." });
+        return res.status(400).json({ error: "Thiếu thông tin: warehouse_id, item_id, quantity." });
       }
 
-      // Check inventory
       const inv = await query(
         "SELECT id, quantity FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
         { wid: parseInt(warehouse_id), iid: parseInt(item_id) },
       );
-      if (inv.recordset.length === 0)
-        return res.status(400).json({ error: "Kho không có vật phẩm này." });
-      if (inv.recordset[0].quantity < parseFloat(quantity)) {
-        return res
-          .status(400)
-          .json({
-            error: `Tồn kho không đủ. Hiện có: ${inv.recordset[0].quantity}`,
-          });
+
+      if (dtype === 'issue') {
+        // Xuất kho: kiểm tra tồn
+        if (inv.recordset.length === 0)
+          return res.status(400).json({ error: "Kho không có vật phẩm này." });
+        if (inv.recordset[0].quantity < parseFloat(quantity))
+          return res.status(400).json({ error: `Tồn kho không đủ. Hiện có: ${inv.recordset[0].quantity}` });
+
+        await query(
+          "UPDATE relief_inventory SET quantity = quantity - @qty, updated_at = GETDATE() WHERE id = @id",
+          { qty: parseFloat(quantity), id: inv.recordset[0].id },
+        );
+      } else {
+        // Nhập lại hàng dư
+        if (inv.recordset.length === 0) {
+          // Tạo mới nếu chưa có dòng inventory
+          await query(
+            `INSERT INTO relief_inventory (warehouse_id, item_id, quantity, updated_at)
+             VALUES (@wid, @iid, @qty, GETDATE())`,
+            { wid: parseInt(warehouse_id), iid: parseInt(item_id), qty: parseFloat(quantity) },
+          );
+        } else {
+          await query(
+            "UPDATE relief_inventory SET quantity = quantity + @qty, last_restocked = GETDATE(), updated_at = GETDATE() WHERE id = @id",
+            { qty: parseFloat(quantity), id: inv.recordset[0].id },
+          );
+        }
       }
 
-      // Deduct inventory
-      await query(
-        "UPDATE relief_inventory SET quantity = quantity - @qty, updated_at = GETDATE() WHERE id = @id",
-        { qty: parseFloat(quantity), id: inv.recordset[0].id },
-      );
-
-      // Record distribution
       const result = await query(
-        `INSERT INTO relief_distributions (request_id, warehouse_id, item_id, quantity, distributed_by, notes)
-       OUTPUT INSERTED.id VALUES (@request_id, @warehouse_id, @item_id, @quantity, @user_id, @notes)`,
+        `INSERT INTO relief_distributions (distribution_type, request_id, team_id, warehouse_id, item_id, quantity, distributed_by, notes)
+         OUTPUT INSERTED.id
+         VALUES (@dtype, @request_id, @team_id, @warehouse_id, @item_id, @quantity, @user_id, @notes)`,
         {
+          dtype,
           request_id: request_id ? parseInt(request_id) : null,
+          team_id: team_id ? parseInt(team_id) : null,
           warehouse_id: parseInt(warehouse_id),
           item_id: parseInt(item_id),
           quantity: parseFloat(quantity),
@@ -314,12 +346,10 @@ router.post(
         },
       );
 
-      res
-        .status(201)
-        .json({
-          id: result.recordset[0].id,
-          message: "Ghi nhận phân phối thành công. Tồn kho đã trừ.",
-        });
+      const msg = dtype === 'return'
+        ? "Nhập lại hàng dư thành công. Tồn kho đã cộng."
+        : "Ghi nhận phân phối thành công. Tồn kho đã trừ.";
+      res.status(201).json({ id: result.recordset[0].id, message: msg });
     } catch (err) {
       next(err);
     }
@@ -441,7 +471,7 @@ router.put(
   authorize("admin", "manager"),
   async (req, res, next) => {
     try {
-      const { status, notes } = req.body; // status: 'approved' | 'rejected' | 'fulfilled'
+      const { status, notes } = req.body;
       const validStatuses = ["approved", "rejected", "fulfilled", "cancelled"];
       if (!validStatuses.includes(status)) {
         return res.status(400).json({ error: "Trạng thái không hợp lệ." });
@@ -449,21 +479,69 @@ router.put(
 
       await query(
         `UPDATE vehicle_requests
-       SET status = @status, notes = COALESCE(@notes, notes),
-           approved_by = @approved_by, updated_at = GETDATE()
-       WHERE id = @id`,
-        {
-          id: parseInt(req.params.id),
-          status,
-          notes: notes || null,
-          approved_by: req.user.id,
-        },
+         SET status = @status, notes = COALESCE(@notes, notes),
+             approved_by = @approved_by, updated_at = GETDATE()
+         WHERE id = @id`,
+        { id: parseInt(req.params.id), status, notes: notes || null, approved_by: req.user.id },
       );
 
       const io = req.app.get("io");
       if (io) io.emit("vehicle_request_updated", { id: req.params.id, status });
 
       res.json({ message: `Đã cập nhật trạng thái: ${status}` });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/vehicle-requests/:id/confirm — Team leader xác nhận nhận xe hoặc trả xe
+// action: 'received' (đã nhận xe) | 'returned' (đã trả xe)
+router.put(
+  "/vehicle-requests/:id/confirm",
+  authenticate,
+  authorize("admin", "manager", "coordinator", "rescue_team"),
+  async (req, res, next) => {
+    try {
+      const { action } = req.body; // 'received' | 'returned'
+      if (!["received", "returned"].includes(action)) {
+        return res.status(400).json({ error: "action phải là 'received' hoặc 'returned'." });
+      }
+
+      // Chỉ team leader được confirm
+      if (req.user.role === "rescue_team" && !req.user.is_team_leader) {
+        return res.status(403).json({ error: "Chỉ team leader mới có thể xác nhận." });
+      }
+
+      const vr = await query(
+        "SELECT status, destination_team_id FROM vehicle_requests WHERE id = @id",
+        { id: parseInt(req.params.id) },
+      );
+      if (!vr.recordset.length) return res.status(404).json({ error: "Không tìm thấy yêu cầu." });
+
+      const current = vr.recordset[0].status;
+      if (action === "received" && current !== "approved") {
+        return res.status(400).json({ error: "Chỉ có thể xác nhận nhận xe khi trạng thái là 'approved'." });
+      }
+      if (action === "returned" && current !== "fulfilled") {
+        return res.status(400).json({ error: "Chỉ có thể xác nhận trả xe khi trạng thái là 'fulfilled'." });
+      }
+
+      const newStatus = action === "received" ? "fulfilled" : "returned";
+      const timeField = action === "received" ? "fulfilled_at" : "returned_confirmed_at";
+      const byField = action === "received" ? "fulfilled_by" : "returned_by";
+
+      await query(
+        `UPDATE vehicle_requests
+         SET status = @status, ${timeField} = GETDATE(), ${byField} = @user_id, updated_at = GETDATE()
+         WHERE id = @id`,
+        { status: newStatus, user_id: req.user.id, id: parseInt(req.params.id) },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_request_updated", { id: req.params.id, status: newStatus });
+
+      res.json({ message: action === "received" ? "Xác nhận đã nhận xe." : "Xác nhận đã trả xe." });
     } catch (err) {
       next(err);
     }
