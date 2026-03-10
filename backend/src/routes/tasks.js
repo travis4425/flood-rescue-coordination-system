@@ -607,8 +607,14 @@ router.put(
       const taskId = parseInt(req.params.id);
       const { reason } = req.body;
 
+      if (!reason || !reason.trim())
+        return res.status(400).json({ error: "Vui lòng nhập lý do hủy task." });
+
       const taskCheck = await query(
-        "SELECT id, status FROM task_groups WHERE id = @id",
+        `SELECT tg.id, tg.status, tg.name, tg.team_id, rt.leader_id
+         FROM task_groups tg
+         LEFT JOIN rescue_teams rt ON rt.id = tg.team_id
+         WHERE tg.id = @id`,
         { id: taskId },
       );
       if (taskCheck.recordset.length === 0)
@@ -616,10 +622,12 @@ router.put(
       if (taskCheck.recordset[0].status === "cancelled")
         return res.status(400).json({ error: "Task đã bị hủy rồi." });
 
+      const { name: taskName, leader_id } = taskCheck.recordset[0];
+
       // Cancel task
       await query(
         "UPDATE task_groups SET status = 'cancelled', notes = ISNULL(notes,'') + @suffix, updated_at = GETDATE() WHERE id = @id",
-        { id: taskId, suffix: reason ? `\n[Hủy: ${reason}]` : "\n[Hủy bởi coordinator]" },
+        { id: taskId, suffix: `\n[Hủy: ${reason.trim()}]` },
       );
 
       // Abort active missions
@@ -650,8 +658,23 @@ router.put(
         { task_id: taskId },
       );
 
+      // Gửi notification cho team leader
+      if (leader_id) {
+        await query(
+          `INSERT INTO notifications (user_id, type, title, message)
+           VALUES (@uid, 'task_cancelled', N'Task bị hủy', @msg)`,
+          {
+            uid: leader_id,
+            msg: `Task "${taskName}" đã bị hủy. Lý do: ${reason.trim()}`,
+          },
+        );
+      }
+
       const io = req.app.get("io");
-      if (io) io.emit("task_updated", { task_group_id: taskId, status: "cancelled" });
+      if (io) {
+        io.emit("task_updated", { task_group_id: taskId, status: "cancelled" });
+        if (leader_id) io.to(`user_${leader_id}`).emit("notification");
+      }
 
       res.json({ message: "Đã hủy task." });
     } catch (err) {
