@@ -359,10 +359,13 @@ router.post(
           `SELECT id, name, latitude, longitude FROM provinces WHERE id IN (${idList}) AND latitude IS NOT NULL`,
         );
       } else {
-        // Mặc định: lấy các tỉnh hay bị lũ (miền Trung)
+        // Mặc định: lấy tỉnh theo region của manager đang đăng nhập (hoặc tất cả nếu admin)
+        const regionFilter = req.user.role === 'manager' && req.user.region_id
+          ? `AND region_id = ${parseInt(req.user.region_id)}`
+          : '';
         provincesResult = await query(
-          `SELECT id, name, latitude, longitude FROM provinces 
-         WHERE latitude IS NOT NULL AND region_id = 2
+          `SELECT id, name, latitude, longitude FROM provinces
+         WHERE latitude IS NOT NULL ${regionFilter}
          ORDER BY id`,
         );
       }
