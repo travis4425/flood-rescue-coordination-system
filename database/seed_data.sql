@@ -523,3 +523,187 @@ UPDATE rescue_requests SET citizen_confirmed = 1, citizen_confirmed_at = GETDATE
 
 PRINT N'✅ Seed data inserted - 183 rows across 23 tables';
 GO
+
+-- ============================================================
+-- PHẦN BỔ SUNG: DỮ LIỆU TP.HCM
+-- ============================================================
+
+DECLARE @hash VARCHAR(255) = '$2a$10$OS0HPBGhR6NtXxQ/QAWmP.CzeOr947.Q04EIqjt1VrYuwIXLGKH7C';
+
+-- Coordinator HCM (ID 96)
+SET IDENTITY_INSERT users ON;
+INSERT INTO users (id, username, email, password_hash, full_name, phone, role, region_id, province_id) VALUES
+  (96, 'coord_hcm', 'hcm.coord@cuuho.vn', @hash, N'Trần Văn Hùng', '0900000096', 'coordinator', 3, 9),
+  -- Team leaders (200-209)
+  (200, 'leader_hcm4',  'leader_hcm4@cuuho.vn',  @hash, N'Phạm Văn Cường',       '0911000001', 'rescue_team', 3, 9),
+  (201, 'leader_hcm5',  'leader_hcm5@cuuho.vn',  @hash, N'Nguyễn Thị Lan Anh',   '0911000002', 'rescue_team', 3, 9),
+  (202, 'leader_hcm6',  'leader_hcm6@cuuho.vn',  @hash, N'Trần Minh Hiếu',       '0911000003', 'rescue_team', 3, 9),
+  (203, 'leader_hcm7',  'leader_hcm7@cuuho.vn',  @hash, N'Lê Thị Thu Hương',     '0911000004', 'rescue_team', 3, 9),
+  (204, 'leader_hcm8',  'leader_hcm8@cuuho.vn',  @hash, N'Võ Văn Đức',           '0911000005', 'rescue_team', 3, 9),
+  (205, 'leader_hcm9',  'leader_hcm9@cuuho.vn',  @hash, N'Huỳnh Thị Ngọc Bích', '0911000006', 'rescue_team', 3, 9),
+  (206, 'leader_hcm10', 'leader_hcm10@cuuho.vn', @hash, N'Đỗ Văn Thịnh',         '0911000007', 'rescue_team', 3, 9),
+  (207, 'leader_hcm11', 'leader_hcm11@cuuho.vn', @hash, N'Bùi Thị Cẩm Nhung',   '0911000008', 'rescue_team', 3, 9),
+  (208, 'leader_hcm12', 'leader_hcm12@cuuho.vn', @hash, N'Đinh Văn Sơn',         '0911000009', 'rescue_team', 3, 9),
+  (209, 'leader_hcm13', 'leader_hcm13@cuuho.vn', @hash, N'Cao Thị Mỹ Linh',     '0911000010', 'rescue_team', 3, 9),
+  -- Members (210-229)
+  (210, 'mem_hcm_01', 'mhcm_01@cuuho.vn', @hash, N'Nguyễn Văn Hải',   '0912000001', 'rescue_team', 3, 9),
+  (211, 'mem_hcm_02', 'mhcm_02@cuuho.vn', @hash, N'Trần Thị Hoa',     '0912000002', 'rescue_team', 3, 9),
+  (212, 'mem_hcm_03', 'mhcm_03@cuuho.vn', @hash, N'Lê Văn Tú',        '0912000003', 'rescue_team', 3, 9),
+  (213, 'mem_hcm_04', 'mhcm_04@cuuho.vn', @hash, N'Phạm Thị Linh',    '0912000004', 'rescue_team', 3, 9),
+  (214, 'mem_hcm_05', 'mhcm_05@cuuho.vn', @hash, N'Võ Văn Nam',       '0912000005', 'rescue_team', 3, 9),
+  (215, 'mem_hcm_06', 'mhcm_06@cuuho.vn', @hash, N'Huỳnh Văn Bảo',    '0912000006', 'rescue_team', 3, 9),
+  (216, 'mem_hcm_07', 'mhcm_07@cuuho.vn', @hash, N'Đặng Thị Thu',     '0912000007', 'rescue_team', 3, 9),
+  (217, 'mem_hcm_08', 'mhcm_08@cuuho.vn', @hash, N'Bùi Văn Hùng',     '0912000008', 'rescue_team', 3, 9),
+  (218, 'mem_hcm_09', 'mhcm_09@cuuho.vn', @hash, N'Ngô Thị Kim',      '0912000009', 'rescue_team', 3, 9),
+  (219, 'mem_hcm_10', 'mhcm_10@cuuho.vn', @hash, N'Lý Văn Dũng',      '0912000010', 'rescue_team', 3, 9),
+  (220, 'mem_hcm_11', 'mhcm_11@cuuho.vn', @hash, N'Trương Thị Nhung', '0912000011', 'rescue_team', 3, 9),
+  (221, 'mem_hcm_12', 'mhcm_12@cuuho.vn', @hash, N'Đỗ Văn Khoa',      '0912000012', 'rescue_team', 3, 9),
+  (222, 'mem_hcm_13', 'mhcm_13@cuuho.vn', @hash, N'Phan Thị Thảo',    '0912000013', 'rescue_team', 3, 9),
+  (223, 'mem_hcm_14', 'mhcm_14@cuuho.vn', @hash, N'Lê Văn Quân',      '0912000014', 'rescue_team', 3, 9),
+  (224, 'mem_hcm_15', 'mhcm_15@cuuho.vn', @hash, N'Nguyễn Thị Trang', '0912000015', 'rescue_team', 3, 9),
+  (225, 'mem_hcm_16', 'mhcm_16@cuuho.vn', @hash, N'Trần Văn Cường',   '0912000016', 'rescue_team', 3, 9),
+  (226, 'mem_hcm_17', 'mhcm_17@cuuho.vn', @hash, N'Võ Thị Lan',       '0912000017', 'rescue_team', 3, 9),
+  (227, 'mem_hcm_18', 'mhcm_18@cuuho.vn', @hash, N'Hoàng Văn Minh',   '0912000018', 'rescue_team', 3, 9),
+  (228, 'mem_hcm_19', 'mhcm_19@cuuho.vn', @hash, N'Đinh Thị Mai',     '0912000019', 'rescue_team', 3, 9),
+  (229, 'mem_hcm_20', 'mhcm_20@cuuho.vn', @hash, N'Cao Văn Tuấn',     '0912000020', 'rescue_team', 3, 9),
+  -- Members (230-269) — 4 người thêm/đội
+  (230, 'mem_hcm_21', 'mhcm_21@cuuho.vn', @hash, N'Nguyễn Văn Bình',   '0913000001', 'rescue_team', 3, 9),
+  (231, 'mem_hcm_22', 'mhcm_22@cuuho.vn', @hash, N'Trần Thị Cúc',     '0913000002', 'rescue_team', 3, 9),
+  (232, 'mem_hcm_23', 'mhcm_23@cuuho.vn', @hash, N'Lê Văn Dương',     '0913000003', 'rescue_team', 3, 9),
+  (233, 'mem_hcm_24', 'mhcm_24@cuuho.vn', @hash, N'Phạm Thị Em',      '0913000004', 'rescue_team', 3, 9),
+  (234, 'mem_hcm_25', 'mhcm_25@cuuho.vn', @hash, N'Võ Văn Phong',     '0913000005', 'rescue_team', 3, 9),
+  (235, 'mem_hcm_26', 'mhcm_26@cuuho.vn', @hash, N'Huỳnh Thị Giang',  '0913000006', 'rescue_team', 3, 9),
+  (236, 'mem_hcm_27', 'mhcm_27@cuuho.vn', @hash, N'Đỗ Văn Hải',      '0913000007', 'rescue_team', 3, 9),
+  (237, 'mem_hcm_28', 'mhcm_28@cuuho.vn', @hash, N'Bùi Thị Ích',     '0913000008', 'rescue_team', 3, 9),
+  (238, 'mem_hcm_29', 'mhcm_29@cuuho.vn', @hash, N'Đinh Văn Khoa',   '0913000009', 'rescue_team', 3, 9),
+  (239, 'mem_hcm_30', 'mhcm_30@cuuho.vn', @hash, N'Cao Thị Lan',     '0913000010', 'rescue_team', 3, 9),
+  (240, 'mem_hcm_31', 'mhcm_31@cuuho.vn', @hash, N'Trương Văn Minh', '0913000011', 'rescue_team', 3, 9),
+  (241, 'mem_hcm_32', 'mhcm_32@cuuho.vn', @hash, N'Phan Thị Nga',    '0913000012', 'rescue_team', 3, 9),
+  (242, 'mem_hcm_33', 'mhcm_33@cuuho.vn', @hash, N'Lý Văn Oanh',    '0913000013', 'rescue_team', 3, 9),
+  (243, 'mem_hcm_34', 'mhcm_34@cuuho.vn', @hash, N'Dương Thị Phúc', '0913000014', 'rescue_team', 3, 9),
+  (244, 'mem_hcm_35', 'mhcm_35@cuuho.vn', @hash, N'Hồ Văn Quân',    '0913000015', 'rescue_team', 3, 9),
+  (245, 'mem_hcm_36', 'mhcm_36@cuuho.vn', @hash, N'Mai Thị Rồng',   '0913000016', 'rescue_team', 3, 9),
+  (246, 'mem_hcm_37', 'mhcm_37@cuuho.vn', @hash, N'Tô Văn Sơn',     '0913000017', 'rescue_team', 3, 9),
+  (247, 'mem_hcm_38', 'mhcm_38@cuuho.vn', @hash, N'Lưu Thị Thùy',   '0913000018', 'rescue_team', 3, 9),
+  (248, 'mem_hcm_39', 'mhcm_39@cuuho.vn', @hash, N'Châu Văn Ước',   '0913000019', 'rescue_team', 3, 9),
+  (249, 'mem_hcm_40', 'mhcm_40@cuuho.vn', @hash, N'Kiều Thị Vân',   '0913000020', 'rescue_team', 3, 9),
+  (250, 'mem_hcm_41', 'mhcm_41@cuuho.vn', @hash, N'Ngô Văn Xuân',   '0913000021', 'rescue_team', 3, 9),
+  (251, 'mem_hcm_42', 'mhcm_42@cuuho.vn', @hash, N'Đinh Thị Yến',   '0913000022', 'rescue_team', 3, 9),
+  (252, 'mem_hcm_43', 'mhcm_43@cuuho.vn', @hash, N'Bùi Văn Zung',   '0913000023', 'rescue_team', 3, 9),
+  (253, 'mem_hcm_44', 'mhcm_44@cuuho.vn', @hash, N'Vũ Thị Anh Thư', '0913000024', 'rescue_team', 3, 9),
+  (254, 'mem_hcm_45', 'mhcm_45@cuuho.vn', @hash, N'Trần Văn Bảo',   '0913000025', 'rescue_team', 3, 9),
+  (255, 'mem_hcm_46', 'mhcm_46@cuuho.vn', @hash, N'Lê Thị Châu',    '0913000026', 'rescue_team', 3, 9),
+  (256, 'mem_hcm_47', 'mhcm_47@cuuho.vn', @hash, N'Phạm Văn Dần',   '0913000027', 'rescue_team', 3, 9),
+  (257, 'mem_hcm_48', 'mhcm_48@cuuho.vn', @hash, N'Hoàng Thị Én',   '0913000028', 'rescue_team', 3, 9),
+  (258, 'mem_hcm_49', 'mhcm_49@cuuho.vn', @hash, N'Võ Văn Gấm',     '0913000029', 'rescue_team', 3, 9),
+  (259, 'mem_hcm_50', 'mhcm_50@cuuho.vn', @hash, N'Nguyễn Thị Hồng','0913000030', 'rescue_team', 3, 9),
+  (260, 'mem_hcm_51', 'mhcm_51@cuuho.vn', @hash, N'Trần Văn In',    '0913000031', 'rescue_team', 3, 9),
+  (261, 'mem_hcm_52', 'mhcm_52@cuuho.vn', @hash, N'Lê Thị Khanh',   '0913000032', 'rescue_team', 3, 9),
+  (262, 'mem_hcm_53', 'mhcm_53@cuuho.vn', @hash, N'Huỳnh Văn Lợi',  '0913000033', 'rescue_team', 3, 9),
+  (263, 'mem_hcm_54', 'mhcm_54@cuuho.vn', @hash, N'Đặng Thị My',    '0913000034', 'rescue_team', 3, 9),
+  (264, 'mem_hcm_55', 'mhcm_55@cuuho.vn', @hash, N'Bùi Văn Nam',    '0913000035', 'rescue_team', 3, 9),
+  (265, 'mem_hcm_56', 'mhcm_56@cuuho.vn', @hash, N'Cao Thị Oanh',   '0913000036', 'rescue_team', 3, 9),
+  (266, 'mem_hcm_57', 'mhcm_57@cuuho.vn', @hash, N'Đinh Văn Phát',  '0913000037', 'rescue_team', 3, 9),
+  (267, 'mem_hcm_58', 'mhcm_58@cuuho.vn', @hash, N'Trương Thị Quý', '0913000038', 'rescue_team', 3, 9),
+  (268, 'mem_hcm_59', 'mhcm_59@cuuho.vn', @hash, N'Hồ Văn Rin',     '0913000039', 'rescue_team', 3, 9),
+  (269, 'mem_hcm_60', 'mhcm_60@cuuho.vn', @hash, N'Phan Thị Sen',   '0913000040', 'rescue_team', 3, 9);
+SET IDENTITY_INSERT users OFF;
+GO
+
+-- Coordinator region cho coord_hcm (user 96)
+IF NOT EXISTS (SELECT 1 FROM coordinator_regions WHERE user_id = 96 AND province_id = 9)
+  INSERT INTO coordinator_regions (user_id, province_id, is_primary, max_workload)
+  VALUES (96, 9, 1, 30);
+GO
+
+-- 10 đội cứu hộ tại TP.HCM (IDs 50-59)
+SET IDENTITY_INSERT rescue_teams ON;
+INSERT INTO rescue_teams (id, name, code, leader_id, province_id, phone, capacity, specialization, status, current_latitude, current_longitude) VALUES
+  (50, N'Đội Cứu Hộ Quận 1',    'HCM-04', 200, 9, '0911100001', 8,  N'water_rescue,evacuation',       'available', 10.7769, 106.7009),
+  (51, N'Đội Cứu Hộ Quận 7',    'HCM-05', 201, 9, '0911100002', 8,  N'medical,water_rescue',          'available', 10.7369, 106.7185),
+  (52, N'Đội Cứu Hộ Bình Thạnh','HCM-06', 202, 9, '0911100003', 10, N'search_rescue,evacuation',      'available', 10.8069, 106.7143),
+  (53, N'Đội Cứu Hộ Gò Vấp',    'HCM-07', 203, 9, '0911100004', 8,  N'water_rescue',                  'available', 10.8394, 106.6649),
+  (54, N'Đội Cứu Hộ Tân Bình',  'HCM-08', 204, 9, '0911100005', 8,  N'search_rescue,medical',         'standby',   10.8013, 106.6525),
+  (55, N'Đội Cứu Hộ Thủ Đức',   'HCM-09', 205, 9, '0911100006', 10, N'water_rescue,evacuation',       'available', 10.8547, 106.7746),
+  (56, N'Đội Cứu Hộ Bình Chánh','HCM-10', 206, 9, '0911100007', 12, N'evacuation,water_rescue',       'available', 10.6886, 106.5735),
+  (57, N'Đội Cứu Hộ Hóc Môn',   'HCM-11', 207, 9, '0911100008', 8,  N'water_rescue,landslide_rescue', 'available', 10.8915, 106.5921),
+  (58, N'Đội Cứu Hộ Nhà Bè',    'HCM-12', 208, 9, '0911100009', 8,  N'water_rescue,medical',          'standby',   10.6877, 106.7345),
+  (59, N'Đội Cứu Hộ Củ Chi',    'HCM-13', 209, 9, '0911100010', 10, N'evacuation,search_rescue',      'available', 11.0060, 106.5030);
+SET IDENTITY_INSERT rescue_teams OFF;
+GO
+
+-- Thành viên các đội HCM (leader + 6 member = 7/đội)
+INSERT INTO rescue_team_members (team_id, user_id, role_in_team) VALUES
+  (50, 200, 'leader'), (50, 210, 'member'), (50, 211, 'medic'),
+  (50, 230, 'member'), (50, 231, 'medic'), (50, 232, 'member'), (50, 233, 'member'),
+  (51, 201, 'leader'), (51, 212, 'member'), (51, 213, 'medic'),
+  (51, 234, 'member'), (51, 235, 'medic'), (51, 236, 'member'), (51, 237, 'member'),
+  (52, 202, 'leader'), (52, 214, 'member'), (52, 215, 'member'),
+  (52, 238, 'member'), (52, 239, 'medic'), (52, 240, 'member'), (52, 241, 'member'),
+  (53, 203, 'leader'), (53, 216, 'member'), (53, 217, 'medic'),
+  (53, 242, 'member'), (53, 243, 'medic'), (53, 244, 'member'), (53, 245, 'member'),
+  (54, 204, 'leader'), (54, 218, 'member'), (54, 219, 'member'),
+  (54, 246, 'member'), (54, 247, 'medic'), (54, 248, 'member'), (54, 249, 'member'),
+  (55, 205, 'leader'), (55, 220, 'member'), (55, 221, 'medic'),
+  (55, 250, 'member'), (55, 251, 'medic'), (55, 252, 'member'), (55, 253, 'member'),
+  (56, 206, 'leader'), (56, 222, 'member'), (56, 223, 'member'),
+  (56, 254, 'member'), (56, 255, 'medic'), (56, 256, 'member'), (56, 257, 'member'),
+  (57, 207, 'leader'), (57, 224, 'member'), (57, 225, 'medic'),
+  (57, 258, 'member'), (57, 259, 'medic'), (57, 260, 'member'), (57, 261, 'member'),
+  (58, 208, 'leader'), (58, 226, 'member'), (58, 227, 'member'),
+  (58, 262, 'member'), (58, 263, 'medic'), (58, 264, 'member'), (58, 265, 'member'),
+  (59, 209, 'leader'), (59, 228, 'member'), (59, 229, 'medic'),
+  (59, 266, 'member'), (59, 267, 'medic'), (59, 268, 'member'), (59, 269, 'member');
+GO
+
+-- 20 rescue requests tại TP.HCM (coordinator_id=96)
+INSERT INTO rescue_requests
+  (tracking_code, citizen_name, citizen_phone, citizen_address,
+   latitude, longitude, address, province_id,
+   incident_type_id, urgency_level_id, description, victim_count,
+   support_type, flood_severity, status, coordinator_id, priority_score)
+VALUES
+  ('RQ-2026-HCM001', N'Nguyễn Văn An',      '0901111001', N'123 Nguyễn Huệ, Q.1',
+   10.7769, 106.7009, N'123 Nguyễn Huệ, Quận 1, TP.HCM',        9, 1, 1, N'Nhà ngập nước 1.5m, 5 người mắc kẹt trên tầng 2', 5,   N'Xuồng cứu hộ', 4, 'pending',  96, 100),
+  ('RQ-2026-HCM002', N'Trần Thị Bình',      '0901111002', N'45 Lê Lợi, Q.1',
+   10.7754, 106.7001, N'45 Lê Lợi, Quận 1, TP.HCM',              9, 3, 2, N'Người cao tuổi bị mắc kẹt, cần sơ tán khẩn cấp', 2,  N'Sơ tán', 3, 'pending',  96, 80),
+  ('RQ-2026-HCM003', N'Lê Văn Cường',       '0901111003', N'78 Phan Văn Trị, Bình Thạnh',
+   10.8069, 106.7143, N'78 Phan Văn Trị, Bình Thạnh, TP.HCM',   9, 1, 2, N'Khu nhà trọ ngập 80cm, 12 người cần di dời gấp', 12, N'Sơ tán, lương thực', 3, 'pending',  96, 80),
+  ('RQ-2026-HCM004', N'Phạm Thị Dung',      '0901111004', N'15 Quang Trung, Gò Vấp',
+   10.8394, 106.6649, N'15 Quang Trung, Gò Vấp, TP.HCM',         9, 4, 1, N'Bệnh nhân tiểu đường nặng, nhà ngập không thể ra ngoài', 1, N'Y tế khẩn cấp, sơ tán', 3, 'verified', 96, 100),
+  ('RQ-2026-HCM005', N'Hoàng Minh Em',      '0901111005', N'32 CMT8, Tân Bình',
+   10.8013, 106.6525, N'32 Cách Mạng Tháng 8, Tân Bình, TP.HCM', 9, 1, 3, N'Hẻm nhỏ ngập sâu, 8 hộ dân cần hỗ trợ lương thực', 25, N'Lương thực, nước uống', 3, 'pending',  96, 60),
+  ('RQ-2026-HCM006', N'Vũ Thị Phượng',      '0901111006', N'101 Hàn Mặc Tử, Bình Thạnh',
+   10.8120, 106.7200, N'101 Hàn Mặc Tử, Bình Thạnh, TP.HCM',    9, 6, 2, N'Gia đình 7 người cần sơ tán, có trẻ em và người già', 7, N'Sơ tán', 4, 'pending',  96, 80),
+  ('RQ-2026-HCM007', N'Đặng Văn Giang',     '0901111007', N'56 Đinh Tiên Hoàng, Bình Thạnh',
+   10.8050, 106.7100, N'56 Đinh Tiên Hoàng, Bình Thạnh, TP.HCM', 9, 1, 3, N'Nhà cấp 4 bị ngập 1m, có nguy cơ sập', 4,            N'Sơ tán khẩn', 4, 'verified', 96, 60),
+  ('RQ-2026-HCM008', N'Bùi Thị Hạnh',       '0901111008', N'88 Nguyễn Thị Định, Q.2',
+   10.7900, 106.7400, N'88 Nguyễn Thị Định, Quận 2, TP.HCM',    9, 5, 4, N'Nhóm 30 người thiếu nước sạch và thực phẩm', 30,      N'Nước sạch, lương thực', 2, 'pending',  96, 40),
+  ('RQ-2026-HCM009', N'Trịnh Văn Inh',      '0901111009', N'23 Lý Chính Thắng, Q.3',
+   10.7830, 106.6890, N'23 Lý Chính Thắng, Quận 3, TP.HCM',     9, 3, 1, N'3 người bị mắc kẹt trên mái nhà, nước dâng rất nhanh', 3, N'Xuồng cứu hộ khẩn cấp', 5, 'pending', 96, 100),
+  ('RQ-2026-HCM010', N'Ngô Thị Kim Oanh',   '0901111010', N'12 Hoàng Diệu, Q.4',
+   10.7600, 106.7000, N'12 Hoàng Diệu, Quận 4, TP.HCM',          9, 1, 2, N'Phụ nữ mang thai 8 tháng kẹt trong nhà ngập, cần sơ tán gấp', 2, N'Y tế, sơ tán', 3, 'verified', 96, 80),
+  ('RQ-2026-HCM011', N'Lý Văn Long',        '0901111011', N'67 Nguyễn Văn Linh, Q.7',
+   10.7369, 106.7185, N'67 Nguyễn Văn Linh, Quận 7, TP.HCM',    9, 1, 3, N'Khu dân cư ngập 60cm, nhiều hộ cần di dời', 20,       N'Sơ tán, lương thực', 3, 'pending',  96, 60),
+  ('RQ-2026-HCM012', N'Dương Thị Mận',      '0901111012', N'45 Huỳnh Tấn Phát, Nhà Bè',
+   10.6877, 106.7345, N'45 Huỳnh Tấn Phát, Nhà Bè, TP.HCM',     9, 2, 2, N'Sạt lở bờ sông, 2 nhà có nguy cơ đổ sập', 8,         N'Sơ tán khẩn, gia cố bờ', 3, 'pending',  96, 80),
+  ('RQ-2026-HCM013', N'Cao Văn Nghĩa',      '0901111013', N'34 Lê Văn Lương, Nhà Bè',
+   10.6820, 106.7380, N'34 Lê Văn Lương, Nhà Bè, TP.HCM',        9, 5, 4, N'Cụm 15 hộ bị cô lập, cần thực phẩm và nước uống', 45, N'Lương thực, nước uống, thuốc men', 2, 'pending', 96, 40),
+  ('RQ-2026-HCM014', N'Phan Thị Oanh',      '0901111014', N'78 Tân Hương, Tân Phú',
+   10.7950, 106.6200, N'78 Tân Hương, Tân Phú, TP.HCM',          9, 4, 1, N'Trẻ sơ sinh sốt cao, nhà ngập không thể đi bệnh viện', 1, N'Y tế khẩn, sơ tán', 2, 'verified', 96, 100),
+  ('RQ-2026-HCM015', N'Hồ Văn Phú',         '0901111015', N'112 Hồ Học Lãm, Bình Tân',
+   10.7600, 106.6050, N'112 Hồ Học Lãm, Bình Tân, TP.HCM',       9, 1, 3, N'Nhà trọ công nhân ngập 70cm, 40 người cần hỗ trợ', 40, N'Sơ tán, lương thực', 3, 'pending',  96, 60),
+  ('RQ-2026-HCM016', N'Đinh Thị Quỳnh',     '0901111016', N'56 An Dương Vương, Bình Chánh',
+   10.6886, 106.5735, N'56 An Dương Vương, Bình Chánh, TP.HCM',  9, 6, 2, N'Trường tiểu học bị ngập, cần sơ tán 80 học sinh', 80, N'Sơ tán khẩn', 4, 'pending',  96, 80),
+  ('RQ-2026-HCM017', N'Lưu Văn Rộng',       '0901111017', N'23 Tô Ký, Hóc Môn',
+   10.8915, 106.5921, N'23 Tô Ký, Hóc Môn, TP.HCM',              9, 1, 4, N'Đường ngập nặng, 5 hộ dân vùng sâu cần tiếp tế', 15,  N'Lương thực, nước uống', 2, 'pending',  96, 40),
+  ('RQ-2026-HCM018', N'Mai Thị Sim',         '0901111018', N'89 Nguyễn Ảnh Thủ, Hóc Môn',
+   10.8850, 106.5980, N'89 Nguyễn Ảnh Thủ, Hóc Môn, TP.HCM',    9, 3, 1, N'Người đàn ông 70 tuổi sống một mình, nhà ngập sâu 1.2m', 1, N'Sơ tán khẩn cấp', 4, 'verified', 96, 100),
+  ('RQ-2026-HCM019', N'Tô Văn Thành',       '0901111019', N'45 Hà Huy Giáp, Q.12',
+   10.8700, 106.6600, N'45 Hà Huy Giáp, Quận 12, TP.HCM',        9, 1, 3, N'Khu dân cư mới ngập 50cm, người dân chưa biết cách sơ tán', 30, N'Hỗ trợ sơ tán, lương thực', 2, 'pending', 96, 60),
+  ('RQ-2026-HCM020', N'Nguyễn Thị Uyên',    '0901111020', N'12 Thạnh Lộc, Q.12',
+   10.8630, 106.6450, N'12 Thạnh Lộc, Quận 12, TP.HCM',          9, 4, 2, N'Bệnh nhân lọc thận không thể rời nhà do ngập, cần hỗ trợ y tế khẩn', 1, N'Y tế khẩn cấp, sơ tán', 3, 'verified', 96, 80);
+GO
+
+PRINT N'✅ HCM data inserted: 1 coordinator + 10 leaders + 60 members + 10 teams + 20 requests';
+GO
