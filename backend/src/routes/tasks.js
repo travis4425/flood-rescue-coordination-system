@@ -47,10 +47,10 @@ router.get("/", authenticate, async (req, res, next) => {
               (SELECT COUNT(*) FROM task_incident_reports ir WHERE ir.task_group_id = tg.id AND ir.status = 'pending') as pending_reports
        FROM task_groups tg
        JOIN users u ON tg.coordinator_id = u.id
-       JOIN rescue_teams rt ON tg.team_id = rt.id
+       LEFT JOIN rescue_teams rt ON tg.team_id = rt.id
        LEFT JOIN provinces p ON tg.province_id = p.id
        ${where}
-       ORDER BY tg.created_at DESC`,
+       ORDER BY ISNULL(tg.scheduled_date, CAST(tg.created_at AS DATE)), tg.created_at DESC`,
       params,
     );
 
@@ -142,25 +142,32 @@ router.post(
   authorize("coordinator", "manager"),
   async (req, res, next) => {
     try {
-      const { name, team_id, request_ids, notes } = req.body;
+      const { name, team_id, team_ids, request_ids, requests, notes } = req.body;
 
-      if (!name || !team_id || !request_ids || request_ids.length === 0) {
+      // Support cả single team (cũ) lẫn multi-team (mới)
+      const allTeamIds = (team_ids?.length ? team_ids : team_id ? [team_id] : []).map(Number);
+      // requests = [{id, team_id}], hoặc fallback từ request_ids (tất cả gán cho team đầu tiên)
+      const requestList = requests?.length
+        ? requests.map(r => ({ id: parseInt(r.id), team_id: parseInt(r.team_id || allTeamIds[0]) }))
+        : (request_ids || []).map(id => ({ id: parseInt(id), team_id: allTeamIds[0] }));
+
+      if (!name || allTeamIds.length === 0 || requestList.length === 0) {
         return res.status(400).json({
-          error: "Cần có: tên task, đội, và ít nhất 1 yêu cầu cứu hộ.",
+          error: "Cần có: tên task, ít nhất 1 đội, và ít nhất 1 yêu cầu cứu hộ.",
         });
       }
 
-      // Get team province
+      // Get province from primary team
       const teamRes = await query(
         "SELECT province_id FROM rescue_teams WHERE id = @id",
-        { id: parseInt(team_id) },
+        { id: allTeamIds[0] },
       );
       if (teamRes.recordset.length === 0) {
         return res.status(404).json({ error: "Không tìm thấy đội." });
       }
       const province_id = teamRes.recordset[0].province_id;
 
-      // Create task group
+      // Create task group (primary team = first team)
       const taskRes = await query(
         `INSERT INTO task_groups (name, coordinator_id, team_id, province_id, notes)
          OUTPUT INSERTED.id
@@ -168,56 +175,42 @@ router.post(
         {
           name,
           coord_id: req.user.id,
-          team_id: parseInt(team_id),
+          team_id: allTeamIds[0],
           province_id,
           notes: notes || null,
         },
       );
       const taskGroupId = taskRes.recordset[0].id;
 
-      // Create a mission for each request_id
-      for (const requestId of request_ids) {
-        // Mark request as assigned
+      // Create a mission for each request, gán đúng đội
+      for (const item of requestList) {
         await query(
           `UPDATE rescue_requests SET status = 'assigned', assigned_team_id = @team_id,
            coordinator_id = @coord_id, assigned_at = GETDATE(), updated_at = GETDATE()
            WHERE id = @req_id AND status IN ('pending','verified')`,
-          {
-            team_id: parseInt(team_id),
-            coord_id: req.user.id,
-            req_id: parseInt(requestId),
-          },
+          { team_id: item.team_id, coord_id: req.user.id, req_id: item.id },
         );
-
-        // Create mission linked to task_group
         await query(
           `INSERT INTO missions (request_id, team_id, status, task_group_id)
            VALUES (@req_id, @team_id, 'assigned', @task_group_id)`,
-          {
-            req_id: parseInt(requestId),
-            team_id: parseInt(team_id),
-            task_group_id: taskGroupId,
-          },
+          { req_id: item.id, team_id: item.team_id, task_group_id: taskGroupId },
         );
       }
 
-      // Set team to on_mission
-      await query(
-        "UPDATE rescue_teams SET status = 'on_mission', updated_at = GETDATE() WHERE id = @id",
-        { id: parseInt(team_id) },
-      );
+      // Set all assigned teams to on_mission
+      for (const tid of allTeamIds) {
+        await query(
+          "UPDATE rescue_teams SET status = 'on_mission', updated_at = GETDATE() WHERE id = @id",
+          { id: tid },
+        );
+      }
 
       const io = req.app.get("io");
       if (io) {
-        io.emit("task_created", {
-          task_group_id: taskGroupId,
-          team_id: parseInt(team_id),
-        });
+        io.emit("task_created", { task_group_id: taskGroupId, team_ids: allTeamIds });
       }
 
-      res
-        .status(201)
-        .json({ id: taskGroupId, message: "Tạo task thành công." });
+      res.status(201).json({ id: taskGroupId, message: "Tạo task thành công." });
     } catch (err) {
       next(err);
     }
@@ -238,7 +231,7 @@ router.get("/:id", authenticate, async (req, res, next) => {
               p.name as province_name
        FROM task_groups tg
        JOIN users u ON tg.coordinator_id = u.id
-       JOIN rescue_teams rt ON tg.team_id = rt.id
+       LEFT JOIN rescue_teams rt ON tg.team_id = rt.id
        LEFT JOIN provinces p ON tg.province_id = p.id
        WHERE tg.id = @id`,
       { id: taskId },
@@ -321,36 +314,50 @@ router.get("/:id", authenticate, async (req, res, next) => {
 });
 
 // ─── PUT /api/tasks/:id/assign-member ────────────────────────────────────────
-// Leader assigns a sub-mission to a specific team member
+// Leader assigns a sub-mission to one or multiple team members
 router.put("/:id/assign-member", authenticate, async (req, res, next) => {
   try {
-    const { mission_id, user_id } = req.body;
-    if (!mission_id || !user_id) {
-      return res.status(400).json({ error: "Cần mission_id và user_id." });
+    const { mission_id, user_id, user_ids } = req.body;
+    if (!mission_id || (!user_id && (!user_ids || user_ids.length === 0))) {
+      return res.status(400).json({ error: "Cần mission_id và user_id (hoặc user_ids)." });
     }
+
+    const missionId = parseInt(mission_id);
+    const taskId = parseInt(req.params.id);
 
     // Verify mission belongs to this task
     const check = await query(
       "SELECT id FROM missions WHERE id = @mission_id AND task_group_id = @task_id",
-      { mission_id: parseInt(mission_id), task_id: parseInt(req.params.id) },
+      { mission_id: missionId, task_id: taskId },
     );
     if (check.recordset.length === 0) {
-      return res
-        .status(404)
-        .json({ error: "Sub-mission không thuộc task này." });
+      return res.status(404).json({ error: "Sub-mission không thuộc task này." });
     }
 
+    const ids = user_ids ? user_ids.map(Number) : [parseInt(user_id)];
+    const primaryUserId = ids[0];
+
+    // Update primary assignee on missions table
     await query(
       "UPDATE missions SET assigned_to_user_id = @user_id, updated_at = GETDATE() WHERE id = @id",
-      { user_id: parseInt(user_id), id: parseInt(mission_id) },
+      { user_id: primaryUserId, id: missionId },
     );
 
+    // Sync mission_assignments junction table
+    await query(
+      "DELETE FROM mission_assignments WHERE mission_id = @mid",
+      { mid: missionId },
+    );
+    for (const uid of ids) {
+      await query(
+        `IF NOT EXISTS (SELECT 1 FROM mission_assignments WHERE mission_id=@mid AND user_id=@uid)
+         INSERT INTO mission_assignments (mission_id, user_id) VALUES (@mid, @uid)`,
+        { mid: missionId, uid },
+      );
+    }
+
     const io = req.app.get("io");
-    if (io)
-      io.emit("mission_assigned", {
-        mission_id: parseInt(mission_id),
-        user_id: parseInt(user_id),
-      });
+    if (io) io.emit("mission_assigned", { mission_id: missionId, user_ids: ids });
 
     res.json({ message: "Đã giao nhiệm vụ cho thành viên." });
   } catch (err) {
@@ -708,6 +715,63 @@ router.put(
     } catch (err) {
       next(err);
     }
+  },
+);
+
+// ─── PUT /api/tasks/:id/reports/:reportId/unresolve ──────────────────────────
+// Coordinator hoàn tác báo cáo đã xử lý → trả về pending
+router.put(
+  "/:id/reports/:reportId/unresolve",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      await query(
+        `UPDATE task_incident_reports
+         SET status = 'pending', resolved_by = NULL, resolved_at = NULL, resolution_note = NULL, updated_at = GETDATE()
+         WHERE id = @rId AND task_group_id = @tId`,
+        { rId: parseInt(req.params.reportId), tId: parseInt(req.params.id) },
+      );
+      res.json({ message: "Đã hoàn tác báo cáo." });
+    } catch (err) { next(err); }
+  },
+);
+
+// ─── PUT /api/tasks/:id/estimated-completion ─────────────────────────────────
+// Leader điền dự kiến hoàn thành
+router.put(
+  "/:id/estimated-completion",
+  authenticate,
+  authorize("rescue_team"),
+  async (req, res, next) => {
+    try {
+      const { estimated_completion } = req.body;
+      await query(
+        "UPDATE task_groups SET estimated_completion = @ec, updated_at = GETDATE() WHERE id = @id",
+        { ec: estimated_completion || null, id: parseInt(req.params.id) },
+      );
+      res.json({ message: "Đã cập nhật dự kiến hoàn thành." });
+    } catch (err) { next(err); }
+  },
+);
+
+// ─── PUT /api/tasks/:id/scheduled-date ───────────────────────────────────────
+// Coordinator lên lịch ngày thực hiện task
+router.put(
+  "/:id/scheduled-date",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const { scheduled_date } = req.body;
+      await query(
+        "UPDATE task_groups SET scheduled_date = @sd, updated_at = GETDATE() WHERE id = @id",
+        { sd: scheduled_date || null, id: parseInt(req.params.id) },
+      );
+      const io = req.app.get("io");
+      if (io) io.emit("task_updated", { task_group_id: parseInt(req.params.id) });
+      res.json({ message: "Đã cập nhật ngày lên lịch." });
+    } catch (err) { next(err); }
   },
 );
 
