@@ -268,6 +268,14 @@ INSERT INTO warehouses (id, name, address, province_id, district_id, latitude, l
 
 SET IDENTITY_INSERT warehouses OFF;
 
+-- Gán manager cho kho trung tâm theo vùng
+-- Vùng Bắc (region 1) → manager id=5 (rm_bac): HN, Hải Phòng, Thanh Hóa
+UPDATE warehouses SET manager_id = 5 WHERE id IN (1, 2, 3);
+-- Vùng Trung (region 2) → manager id=3 (rm_trung): Nghệ An→Khánh Hòa
+UPDATE warehouses SET manager_id = 3 WHERE id IN (4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
+-- Vùng Nam (region 3) → manager id=4 (rm_nam): HCM, Cần Thơ, An Giang, Kiên Giang
+UPDATE warehouses SET manager_id = 4 WHERE id IN (14, 15, 16, 17);
+
 -- 13. RELIEF ITEMS (8)
 SET IDENTITY_INSERT relief_items ON;
 INSERT INTO relief_items (id, name, category, unit, description) VALUES
