@@ -245,164 +245,121 @@ router.get("/relief-items", authenticate, async (req, res, next) => {
 
 // ======== DISTRIBUTIONS (Phân phối cứu trợ) ========
 
+// Helper: lấy distribution + kiểm tra quyền coordinator
+async function getDistAndCheckScope(id, user) {
+  const dist = await query(
+    `SELECT rd.*, w.province_id
+     FROM relief_distributions rd
+     JOIN warehouses w ON rd.warehouse_id = w.id
+     WHERE rd.id = @id`,
+    { id },
+  );
+  if (!dist.recordset.length) return { error: "Không tìm thấy bản ghi.", status: 404 };
+  const row = dist.recordset[0];
+  if (user.role === "coordinator") {
+    const allowed = await query(
+      `SELECT 1 FROM coordinator_regions WHERE user_id = @uid AND province_id = @prov`,
+      { uid: user.id, prov: row.province_id },
+    );
+    if (!allowed.recordset.length) return { error: "Bạn không có quyền thao tác kho này.", status: 403 };
+  }
+  return { row };
+}
+
+// GET /api/resources/distributions
+// - manager: kho trong vùng mình
+// - coordinator: kho trong tỉnh mình
+// - rescue_team: distributions của đội mình
 router.get(
   "/distributions",
   authenticate,
-  authorize("admin", "manager", "coordinator"),
+  authorize("manager", "coordinator", "rescue_team"),
   async (req, res, next) => {
     try {
-      const { warehouse_id, request_id, distribution_type } = req.query;
-      let where = "WHERE 1=1";
+      const { warehouse_id, team_id, status } = req.query;
+      let where = "WHERE rd.distribution_type = 'issue'";
       const params = {};
-      if (warehouse_id) {
-        where += " AND rd.warehouse_id = @warehouse_id";
-        params.warehouse_id = parseInt(warehouse_id);
-      }
-      if (request_id) {
-        where += " AND rd.request_id = @request_id";
-        params.request_id = parseInt(request_id);
-      }
-      if (distribution_type) {
-        where += " AND rd.distribution_type = @distribution_type";
-        params.distribution_type = distribution_type;
-      }
-      // Coordinator chỉ thấy distributions từ kho trong tỉnh được phân công
+      if (warehouse_id) { where += " AND rd.warehouse_id = @warehouse_id"; params.warehouse_id = parseInt(warehouse_id); }
+      if (team_id)      { where += " AND rd.team_id = @team_id";           params.team_id = parseInt(team_id); }
+      if (status)       { where += " AND rd.status = @status";             params.status = status; }
+
       if (req.user.role === "coordinator") {
         where += ` AND w.province_id IN (
-          SELECT province_id FROM coordinator_regions
-          WHERE user_id = @coord_user_id AND province_id IS NOT NULL
-        )`;
-        params.coord_user_id = req.user.id;
-      }
-      // Manager chỉ thấy distributions từ kho trong vùng của mình
-      if (req.user.role === "manager" && req.user.region_id) {
-        where += ` AND w.province_id IN (
-          SELECT id FROM provinces WHERE region_id = @region_id
-        )`;
+          SELECT province_id FROM coordinator_regions WHERE user_id = @coord_uid AND province_id IS NOT NULL)`;
+        params.coord_uid = req.user.id;
+      } else if (req.user.role === "manager" && req.user.region_id) {
+        where += ` AND w.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)`;
         params.region_id = req.user.region_id;
+      } else if (req.user.role === "rescue_team") {
+        // Team leader chỉ thấy distributions của đội mình
+        where += ` AND rd.team_id = (SELECT id FROM rescue_teams WHERE leader_id = @uid)`;
+        params.uid = req.user.id;
       }
 
       const result = await query(
         `SELECT rd.*, ri.name as item_name, ri.unit as item_unit, ri.category,
-              w.name as warehouse_name, u.full_name as distributed_by_name,
-              rr.tracking_code, rr.citizen_name,
-              rt.name as team_name
-       FROM relief_distributions rd
-       JOIN relief_items ri ON rd.item_id = ri.id
-       JOIN warehouses w ON rd.warehouse_id = w.id
-       JOIN users u ON rd.distributed_by = u.id
-       LEFT JOIN rescue_requests rr ON rd.request_id = rr.id
-       LEFT JOIN rescue_teams rt ON rd.team_id = rt.id
-       ${where}
-       ORDER BY rd.created_at DESC`,
+                w.name as warehouse_name, u.full_name as distributed_by_name,
+                rt.name as team_name,
+                rcb.full_name as return_confirmed_by_name
+         FROM relief_distributions rd
+         JOIN relief_items ri    ON rd.item_id = ri.id
+         JOIN warehouses w       ON rd.warehouse_id = w.id
+         JOIN users u            ON rd.distributed_by = u.id
+         LEFT JOIN rescue_teams rt  ON rd.team_id = rt.id
+         LEFT JOIN users rcb        ON rd.return_confirmed_by = rcb.id
+         ${where}
+         ORDER BY rd.created_at DESC`,
         params,
       );
       res.json(result.recordset);
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   },
 );
 
-// PUT /api/resources/distributions/:id/return — Xác nhận team đã trả lại vật tư
-router.put(
-  "/distributions/:id/return",
-  authenticate,
-  authorize("admin", "manager", "coordinator"),
-  async (req, res, next) => {
-    try {
-      const id = parseInt(req.params.id);
-      const dist = await query(
-        `SELECT rd.id, rd.distribution_type, rd.returned_at, w.province_id, w.coordinator_id, w.manager_id
-         FROM relief_distributions rd
-         JOIN warehouses w ON rd.warehouse_id = w.id
-         WHERE rd.id = @id`,
-        { id },
-      );
-      if (!dist.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
-      const row = dist.recordset[0];
-      if (row.distribution_type !== "issue") {
-        return res.status(400).json({ error: "Chỉ xác nhận trả cho bản ghi xuất kho (issue)." });
-      }
-      if (row.returned_at) {
-        return res.status(400).json({ error: "Bản ghi này đã được đánh dấu trả rồi." });
-      }
-      // Coordinator chỉ được xác nhận kho trong tỉnh mình
-      if (req.user.role === "coordinator") {
-        const allowed = await query(
-          `SELECT 1 FROM coordinator_regions
-           WHERE user_id = @uid AND province_id = @prov`,
-          { uid: req.user.id, prov: row.province_id },
-        );
-        if (!allowed.recordset.length) {
-          return res.status(403).json({ error: "Bạn không có quyền xác nhận kho này." });
-        }
-      }
-
-      await query(
-        `UPDATE relief_distributions SET returned_at = GETDATE() WHERE id = @id`,
-        { id },
-      );
-      res.json({ message: "Đã xác nhận trả vật tư." });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
+// POST /api/resources/distributions — Coordinator/Manager cấp phát vật tư cho team
 router.post(
   "/distributions",
   authenticate,
-  authorize("admin", "manager", "coordinator"),
+  authorize("manager", "coordinator"),
   async (req, res, next) => {
     try {
-      const { request_id, team_id, warehouse_id, item_id, quantity, notes, distribution_type } = req.body;
-      const dtype = distribution_type === 'return' ? 'return' : 'issue';
-      if (!warehouse_id || !item_id || !quantity) {
-        return res.status(400).json({ error: "Thiếu thông tin: warehouse_id, item_id, quantity." });
+      const { team_id, warehouse_id, item_id, quantity, notes } = req.body;
+      if (!team_id || !warehouse_id || !item_id || !quantity)
+        return res.status(400).json({ error: "Thiếu thông tin: team_id, warehouse_id, item_id, quantity." });
+
+      // Coordinator chỉ được xuất từ kho tỉnh mình
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions cr
+           JOIN warehouses w ON w.province_id = cr.province_id
+           WHERE cr.user_id = @uid AND w.id = @wid`,
+          { uid: req.user.id, wid: parseInt(warehouse_id) },
+        );
+        if (!allowed.recordset.length)
+          return res.status(403).json({ error: "Bạn chỉ được xuất từ kho trong tỉnh của mình." });
       }
 
       const inv = await query(
         "SELECT id, quantity FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
         { wid: parseInt(warehouse_id), iid: parseInt(item_id) },
       );
+      if (!inv.recordset.length)
+        return res.status(400).json({ error: "Kho không có vật phẩm này." });
+      if (inv.recordset[0].quantity < parseFloat(quantity))
+        return res.status(400).json({ error: `Tồn kho không đủ. Hiện có: ${inv.recordset[0].quantity}` });
 
-      if (dtype === 'issue') {
-        // Xuất kho: kiểm tra tồn
-        if (inv.recordset.length === 0)
-          return res.status(400).json({ error: "Kho không có vật phẩm này." });
-        if (inv.recordset[0].quantity < parseFloat(quantity))
-          return res.status(400).json({ error: `Tồn kho không đủ. Hiện có: ${inv.recordset[0].quantity}` });
-
-        await query(
-          "UPDATE relief_inventory SET quantity = quantity - @qty, updated_at = GETDATE() WHERE id = @id",
-          { qty: parseFloat(quantity), id: inv.recordset[0].id },
-        );
-      } else {
-        // Nhập lại hàng dư
-        if (inv.recordset.length === 0) {
-          // Tạo mới nếu chưa có dòng inventory
-          await query(
-            `INSERT INTO relief_inventory (warehouse_id, item_id, quantity, updated_at)
-             VALUES (@wid, @iid, @qty, GETDATE())`,
-            { wid: parseInt(warehouse_id), iid: parseInt(item_id), qty: parseFloat(quantity) },
-          );
-        } else {
-          await query(
-            "UPDATE relief_inventory SET quantity = quantity + @qty, last_restocked = GETDATE(), updated_at = GETDATE() WHERE id = @id",
-            { qty: parseFloat(quantity), id: inv.recordset[0].id },
-          );
-        }
-      }
+      await query(
+        "UPDATE relief_inventory SET quantity = quantity - @qty, updated_at = GETDATE() WHERE id = @id",
+        { qty: parseFloat(quantity), id: inv.recordset[0].id },
+      );
 
       const result = await query(
-        `INSERT INTO relief_distributions (distribution_type, request_id, team_id, warehouse_id, item_id, quantity, distributed_by, notes)
+        `INSERT INTO relief_distributions
+           (distribution_type, team_id, warehouse_id, item_id, quantity, distributed_by, notes, status)
          OUTPUT INSERTED.id
-         VALUES (@dtype, @request_id, @team_id, @warehouse_id, @item_id, @quantity, @user_id, @notes)`,
+         VALUES ('issue', @team_id, @warehouse_id, @item_id, @quantity, @user_id, @notes, 'issued')`,
         {
-          dtype,
-          request_id: request_id ? parseInt(request_id) : null,
-          team_id: team_id ? parseInt(team_id) : null,
+          team_id: parseInt(team_id),
           warehouse_id: parseInt(warehouse_id),
           item_id: parseInt(item_id),
           quantity: parseFloat(quantity),
@@ -411,13 +368,141 @@ router.post(
         },
       );
 
-      const msg = dtype === 'return'
-        ? "Nhập lại hàng dư thành công. Tồn kho đã cộng."
-        : "Ghi nhận phân phối thành công. Tồn kho đã trừ.";
-      res.status(201).json({ id: result.recordset[0].id, message: msg });
-    } catch (err) {
-      next(err);
-    }
+      const io = req.app.get("io");
+      if (io) io.emit("distribution_new", { id: result.recordset[0].id, team_id: parseInt(team_id) });
+      res.status(201).json({ id: result.recordset[0].id, message: "Cấp phát thành công. Tồn kho đã trừ." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /api/resources/distributions/:id/confirm — Team leader xác nhận đã nhận hàng
+router.put(
+  "/distributions/:id/confirm",
+  authenticate,
+  authorize("rescue_team"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const dist = await query(
+        `SELECT rd.id, rd.status, rd.team_id, rt.leader_id
+         FROM relief_distributions rd
+         JOIN rescue_teams rt ON rd.team_id = rt.id
+         WHERE rd.id = @id`,
+        { id },
+      );
+      if (!dist.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = dist.recordset[0];
+      if (row.leader_id !== req.user.id)
+        return res.status(403).json({ error: "Bạn không phải trưởng đội nhận hàng này." });
+      if (row.status !== "issued")
+        return res.status(400).json({ error: "Chỉ xác nhận được khi trạng thái là 'issued'." });
+
+      await query(
+        `UPDATE relief_distributions SET status = 'confirmed', confirmed_at = GETDATE() WHERE id = @id`,
+        { id },
+      );
+      res.json({ message: "Đã xác nhận nhận hàng." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /api/resources/distributions/:id/request-return — Team leader tạo phiếu trả hàng dư
+router.put(
+  "/distributions/:id/request-return",
+  authenticate,
+  authorize("rescue_team"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { return_quantity, return_note } = req.body;
+      if (!return_quantity || parseFloat(return_quantity) <= 0)
+        return res.status(400).json({ error: "Số lượng trả phải lớn hơn 0." });
+
+      const dist = await query(
+        `SELECT rd.id, rd.status, rd.quantity, rd.team_id, rt.leader_id
+         FROM relief_distributions rd
+         JOIN rescue_teams rt ON rd.team_id = rt.id
+         WHERE rd.id = @id`,
+        { id },
+      );
+      if (!dist.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = dist.recordset[0];
+      if (row.leader_id !== req.user.id)
+        return res.status(403).json({ error: "Bạn không phải trưởng đội." });
+      if (row.status !== "confirmed")
+        return res.status(400).json({ error: "Chỉ tạo phiếu trả sau khi đã xác nhận nhận hàng." });
+      if (parseFloat(return_quantity) > row.quantity)
+        return res.status(400).json({ error: `Số lượng trả không được vượt quá số đã nhận (${row.quantity}).` });
+
+      await query(
+        `UPDATE relief_distributions
+         SET status = 'return_requested',
+             return_quantity = @qty,
+             return_note = @note,
+             return_requested_at = GETDATE()
+         WHERE id = @id`,
+        { id, qty: parseFloat(return_quantity), note: return_note || null },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("distribution_return_requested", { id, team_id: row.team_id });
+      res.json({ message: "Đã tạo phiếu trả hàng. Chờ coordinator xác nhận." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /api/resources/distributions/:id/confirm-return — Coordinator xác nhận nhận lại hàng dư
+router.put(
+  "/distributions/:id/confirm-return",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { received_quantity } = req.body;
+      if (!received_quantity || parseFloat(received_quantity) <= 0)
+        return res.status(400).json({ error: "Số lượng thực nhận phải lớn hơn 0." });
+
+      const { row, error, status } = await getDistAndCheckScope(id, req.user);
+      if (error) return res.status(status).json({ error });
+      if (row.status !== "return_requested")
+        return res.status(400).json({ error: "Chưa có phiếu trả từ team." });
+      if (parseFloat(received_quantity) > row.return_quantity)
+        return res.status(400).json({ error: `Số thực nhận không được vượt quá số team khai trả (${row.return_quantity}).` });
+
+      const actualQty = parseFloat(received_quantity);
+      const newStatus = actualQty < row.quantity ? "partially_returned" : "returned";
+
+      // Nhập lại kho
+      const inv = await query(
+        "SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
+        { wid: row.warehouse_id, iid: row.item_id },
+      );
+      if (inv.recordset.length) {
+        await query(
+          "UPDATE relief_inventory SET quantity = quantity + @qty, updated_at = GETDATE() WHERE id = @id",
+          { qty: actualQty, id: inv.recordset[0].id },
+        );
+      } else {
+        await query(
+          "INSERT INTO relief_inventory (warehouse_id, item_id, quantity, updated_at) VALUES (@wid, @iid, @qty, GETDATE())",
+          { wid: row.warehouse_id, iid: row.item_id, qty: actualQty },
+        );
+      }
+
+      await query(
+        `UPDATE relief_distributions
+         SET status = @status,
+             received_return_qty = @qty,
+             return_confirmed_at = GETDATE(),
+             return_confirmed_by = @uid,
+             returned_at = GETDATE()
+         WHERE id = @id`,
+        { id, status: newStatus, qty: actualQty, uid: req.user.id },
+      );
+
+      res.json({ message: `Đã xác nhận nhận lại ${actualQty} đơn vị. Tồn kho đã cộng.` });
+    } catch (err) { next(err); }
   },
 );
 
