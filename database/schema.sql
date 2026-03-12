@@ -523,4 +523,77 @@ CREATE INDEX idx_vreq_created  ON vehicle_requests(created_at DESC);
 -- returned_at: đánh dấu thời điểm team trả lại vật tư đã nhận (trên bản ghi distribution_type='issue')
 ALTER TABLE relief_distributions ADD returned_at DATETIME2 NULL;
 
+-- === PHASE 2: Supply & Vehicle Coordination Flow ===
+
+-- Thêm luồng xác nhận vào relief_distributions
+ALTER TABLE relief_distributions ADD status VARCHAR(20) NOT NULL DEFAULT 'issued'
+    CHECK (status IN ('issued','confirmed','return_requested','partially_returned','returned'));
+ALTER TABLE relief_distributions ADD confirmed_at         DATETIME2 NULL; -- team xác nhận nhận
+ALTER TABLE relief_distributions ADD return_quantity      FLOAT     NULL; -- team khai số lượng muốn trả
+ALTER TABLE relief_distributions ADD return_note          NVARCHAR(300) NULL;
+ALTER TABLE relief_distributions ADD return_requested_at  DATETIME2 NULL;
+ALTER TABLE relief_distributions ADD received_return_qty  FLOAT     NULL; -- coordinator xác nhận nhận lại (số thực)
+ALTER TABLE relief_distributions ADD return_confirmed_at  DATETIME2 NULL;
+ALTER TABLE relief_distributions ADD return_confirmed_by  INT       NULL REFERENCES users(id);
+
+-- *19. VEHICLE DISPATCHES (Coordinator điều xe cho team)
+CREATE TABLE vehicle_dispatches (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    vehicle_id      INT NOT NULL REFERENCES vehicles(id),
+    team_id         INT NOT NULL REFERENCES rescue_teams(id),
+    dispatched_by   INT NOT NULL REFERENCES users(id),   -- coordinator
+    mission_note    NVARCHAR(300) NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'dispatched'
+                    CHECK (status IN ('dispatched','confirmed','returned','cancelled')),
+    dispatched_at   DATETIME2 DEFAULT GETDATE(),
+    confirmed_at    DATETIME2 NULL,                      -- team xác nhận nhận xe
+    returned_at     DATETIME2 NULL,                      -- team trả xe
+    return_confirmed_at DATETIME2 NULL,                  -- coordinator xác nhận nhận lại
+    return_confirmed_by INT NULL REFERENCES users(id),
+    created_at      DATETIME2 DEFAULT GETDATE(),
+    updated_at      DATETIME2 DEFAULT GETDATE()
+);
+CREATE INDEX idx_vdispatch_vehicle ON vehicle_dispatches(vehicle_id);
+CREATE INDEX idx_vdispatch_team    ON vehicle_dispatches(team_id);
+CREATE INDEX idx_vdispatch_status  ON vehicle_dispatches(status);
+
+-- *20. SUPPLY TRANSFERS (Manager điều vật tư liên tỉnh)
+CREATE TABLE supply_transfers (
+    id                  INT IDENTITY(1,1) PRIMARY KEY,
+    from_warehouse_id   INT NOT NULL REFERENCES warehouses(id),
+    to_warehouse_id     INT NOT NULL REFERENCES warehouses(id),
+    item_id             INT NOT NULL REFERENCES relief_items(id),
+    quantity            FLOAT NOT NULL,
+    transferred_by      INT NOT NULL REFERENCES users(id),  -- manager
+    status              VARCHAR(20) NOT NULL DEFAULT 'in_transit'
+                        CHECK (status IN ('in_transit','completed','cancelled')),
+    notes               NVARCHAR(300) NULL,
+    confirmed_by        INT NULL REFERENCES users(id),      -- coordinator tỉnh B
+    confirmed_quantity  FLOAT NULL,                         -- số thực nhận được
+    confirmed_at        DATETIME2 NULL,
+    created_at          DATETIME2 DEFAULT GETDATE(),
+    updated_at          DATETIME2 DEFAULT GETDATE()
+);
+CREATE INDEX idx_stransfer_from   ON supply_transfers(from_warehouse_id);
+CREATE INDEX idx_stransfer_to     ON supply_transfers(to_warehouse_id);
+CREATE INDEX idx_stransfer_status ON supply_transfers(status);
+
+-- *21. VEHICLE TRANSFERS (Manager điều xe liên tỉnh)
+CREATE TABLE vehicle_transfers (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    vehicle_id      INT NOT NULL REFERENCES vehicles(id),
+    from_province_id INT NOT NULL REFERENCES provinces(id),
+    to_province_id  INT NOT NULL REFERENCES provinces(id),
+    transferred_by  INT NOT NULL REFERENCES users(id),      -- manager
+    status          VARCHAR(20) NOT NULL DEFAULT 'in_transit'
+                    CHECK (status IN ('in_transit','completed','cancelled')),
+    notes           NVARCHAR(300) NULL,
+    confirmed_by    INT NULL REFERENCES users(id),          -- coordinator tỉnh B
+    confirmed_at    DATETIME2 NULL,
+    created_at      DATETIME2 DEFAULT GETDATE(),
+    updated_at      DATETIME2 DEFAULT GETDATE()
+);
+CREATE INDEX idx_vtransfer_vehicle ON vehicle_transfers(vehicle_id);
+CREATE INDEX idx_vtransfer_status  ON vehicle_transfers(status);
+
 GO
