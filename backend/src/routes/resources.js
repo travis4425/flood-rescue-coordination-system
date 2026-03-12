@@ -698,4 +698,574 @@ router.put(
   },
 );
 
+// ======== VEHICLE DISPATCHES (Coordinator điều xe cho team) ========
+
+// GET /api/resources/vehicle-dispatches
+router.get(
+  "/vehicle-dispatches",
+  authenticate,
+  authorize("manager", "coordinator", "rescue_team"),
+  async (req, res, next) => {
+    try {
+      const { team_id, status } = req.query;
+      let where = "WHERE 1=1";
+      const params = {};
+      if (team_id) { where += " AND vd.team_id = @team_id"; params.team_id = parseInt(team_id); }
+      if (status)  { where += " AND vd.status = @status";   params.status = status; }
+
+      if (req.user.role === "coordinator") {
+        // Chỉ thấy xe thuộc tỉnh mình
+        where += ` AND v.province_id IN (
+          SELECT province_id FROM coordinator_regions WHERE user_id = @uid AND province_id IS NOT NULL)`;
+        params.uid = req.user.id;
+      } else if (req.user.role === "manager" && req.user.region_id) {
+        where += ` AND v.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)`;
+        params.region_id = req.user.region_id;
+      } else if (req.user.role === "rescue_team") {
+        where += ` AND vd.team_id = (SELECT id FROM rescue_teams WHERE leader_id = @uid)`;
+        params.uid = req.user.id;
+      }
+
+      const result = await query(
+        `SELECT vd.*,
+                v.name as vehicle_name, v.plate_number, v.type as vehicle_type,
+                rt.name as team_name,
+                u.full_name as dispatched_by_name,
+                rcb.full_name as return_confirmed_by_name
+         FROM vehicle_dispatches vd
+         JOIN vehicles v          ON vd.vehicle_id = v.id
+         JOIN rescue_teams rt     ON vd.team_id = rt.id
+         JOIN users u             ON vd.dispatched_by = u.id
+         LEFT JOIN users rcb      ON vd.return_confirmed_by = rcb.id
+         ${where}
+         ORDER BY vd.created_at DESC`,
+        params,
+      );
+      res.json(result.recordset);
+    } catch (err) { next(err); }
+  },
+);
+
+// POST /api/resources/vehicle-dispatches — Coordinator điều xe cho team
+router.post(
+  "/vehicle-dispatches",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const { vehicle_id, team_id, mission_note } = req.body;
+      if (!vehicle_id || !team_id)
+        return res.status(400).json({ error: "Thiếu thông tin: vehicle_id, team_id." });
+
+      // Kiểm tra xe available
+      const veh = await query(
+        "SELECT id, status, province_id FROM vehicles WHERE id = @id",
+        { id: parseInt(vehicle_id) },
+      );
+      if (!veh.recordset.length) return res.status(404).json({ error: "Không tìm thấy xe." });
+      if (veh.recordset[0].status !== "available")
+        return res.status(400).json({ error: "Xe không ở trạng thái sẵn sàng (available)." });
+
+      // Coordinator chỉ điều xe thuộc tỉnh mình
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions WHERE user_id = @uid AND province_id = @prov`,
+          { uid: req.user.id, prov: veh.recordset[0].province_id },
+        );
+        if (!allowed.recordset.length)
+          return res.status(403).json({ error: "Bạn chỉ được điều xe trong tỉnh của mình." });
+      }
+
+      // Đánh dấu xe đang được sử dụng
+      await query(
+        "UPDATE vehicles SET status = 'in_use', updated_at = GETDATE() WHERE id = @id",
+        { id: parseInt(vehicle_id) },
+      );
+
+      const result = await query(
+        `INSERT INTO vehicle_dispatches (vehicle_id, team_id, dispatched_by, mission_note, status)
+         OUTPUT INSERTED.id
+         VALUES (@vid, @tid, @uid, @note, 'dispatched')`,
+        { vid: parseInt(vehicle_id), tid: parseInt(team_id), uid: req.user.id, note: mission_note || null },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_dispatch_new", { id: result.recordset[0].id, team_id: parseInt(team_id) });
+      res.status(201).json({ id: result.recordset[0].id, message: "Đã điều xe cho đội. Xe đang được sử dụng." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /api/resources/vehicle-dispatches/:id/confirm — Team leader xác nhận đã nhận xe
+router.put(
+  "/vehicle-dispatches/:id/confirm",
+  authenticate,
+  authorize("rescue_team"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vd = await query(
+        `SELECT vd.id, vd.status, vd.team_id, rt.leader_id
+         FROM vehicle_dispatches vd
+         JOIN rescue_teams rt ON vd.team_id = rt.id
+         WHERE vd.id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = vd.recordset[0];
+      if (row.leader_id !== req.user.id)
+        return res.status(403).json({ error: "Bạn không phải trưởng đội nhận xe này." });
+      if (row.status !== "dispatched")
+        return res.status(400).json({ error: "Chỉ xác nhận được khi trạng thái là 'dispatched'." });
+
+      await query(
+        `UPDATE vehicle_dispatches SET status = 'confirmed', confirmed_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`,
+        { id },
+      );
+      res.json({ message: "Đã xác nhận nhận xe." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /api/resources/vehicle-dispatches/:id/return — Team leader trả xe sau nhiệm vụ
+router.put(
+  "/vehicle-dispatches/:id/return",
+  authenticate,
+  authorize("rescue_team"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vd = await query(
+        `SELECT vd.id, vd.status, vd.team_id, vd.vehicle_id, rt.leader_id
+         FROM vehicle_dispatches vd
+         JOIN rescue_teams rt ON vd.team_id = rt.id
+         WHERE vd.id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = vd.recordset[0];
+      if (row.leader_id !== req.user.id)
+        return res.status(403).json({ error: "Bạn không phải trưởng đội." });
+      if (row.status !== "confirmed")
+        return res.status(400).json({ error: "Chỉ trả xe sau khi đã xác nhận nhận." });
+
+      await query(
+        `UPDATE vehicle_dispatches SET status = 'returned', returned_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`,
+        { id },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_dispatch_returned", { id, vehicle_id: row.vehicle_id });
+      res.json({ message: "Đã gửi yêu cầu trả xe. Chờ coordinator xác nhận." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /api/resources/vehicle-dispatches/:id/confirm-return — Coordinator xác nhận nhận lại xe
+router.put(
+  "/vehicle-dispatches/:id/confirm-return",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vd = await query(
+        `SELECT vd.id, vd.status, vd.vehicle_id, v.province_id
+         FROM vehicle_dispatches vd
+         JOIN vehicles v ON vd.vehicle_id = v.id
+         WHERE vd.id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length) return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = vd.recordset[0];
+      if (row.status !== "returned")
+        return res.status(400).json({ error: "Team chưa gửi yêu cầu trả xe." });
+
+      // Coordinator chỉ xác nhận xe thuộc tỉnh mình
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions WHERE user_id = @uid AND province_id = @prov`,
+          { uid: req.user.id, prov: row.province_id },
+        );
+        if (!allowed.recordset.length)
+          return res.status(403).json({ error: "Bạn không có quyền xác nhận xe này." });
+      }
+
+      await query(
+        `UPDATE vehicle_dispatches
+         SET status = 'cancelled', return_confirmed_at = GETDATE(), return_confirmed_by = @uid, updated_at = GETDATE()
+         WHERE id = @id`,
+        { id, uid: req.user.id },
+      );
+      // Trả xe về available
+      await query(
+        "UPDATE vehicles SET status = 'available', updated_at = GETDATE() WHERE id = @id",
+        { id: row.vehicle_id },
+      );
+
+      res.json({ message: "Đã xác nhận nhận lại xe. Xe trở về trạng thái sẵn sàng." });
+    } catch (err) { next(err); }
+  },
+);
+
+// ======== SUPPLY TRANSFERS (Manager điều vật tư liên tỉnh) ========
+
+router.get(
+  "/supply-transfers",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const { status } = req.query;
+      let where = "WHERE 1=1";
+      const params = {};
+      if (status) { where += " AND st.status = @status"; params.status = status; }
+
+      if (req.user.role === "manager" && req.user.region_id) {
+        where += ` AND (
+          wf.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)
+          OR wt.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id))`;
+        params.region_id = req.user.region_id;
+      } else if (req.user.role === "coordinator") {
+        // Coordinator chỉ thấy transfer đến tỉnh mình
+        where += ` AND wt.province_id IN (
+          SELECT province_id FROM coordinator_regions WHERE user_id = @uid AND province_id IS NOT NULL)`;
+        params.uid = req.user.id;
+      }
+
+      const result = await query(
+        `SELECT st.*,
+                ri.name as item_name, ri.unit as item_unit,
+                wf.name as from_warehouse_name, pf.name as from_province_name,
+                wt.name as to_warehouse_name,   pt.name as to_province_name,
+                u.full_name as transferred_by_name,
+                cb.full_name as confirmed_by_name
+         FROM supply_transfers st
+         JOIN relief_items ri ON st.item_id = ri.id
+         JOIN warehouses wf   ON st.from_warehouse_id = wf.id
+         JOIN warehouses wt   ON st.to_warehouse_id = wt.id
+         JOIN provinces pf    ON wf.province_id = pf.id
+         JOIN provinces pt    ON wt.province_id = pt.id
+         JOIN users u         ON st.transferred_by = u.id
+         LEFT JOIN users cb   ON st.confirmed_by = cb.id
+         ${where}
+         ORDER BY st.created_at DESC`,
+        params,
+      );
+      res.json(result.recordset);
+    } catch (err) { next(err); }
+  },
+);
+
+// POST — Manager tạo lệnh điều vật tư, kho nguồn trừ ngay
+router.post(
+  "/supply-transfers",
+  authenticate,
+  authorize("manager"),
+  async (req, res, next) => {
+    try {
+      const { from_warehouse_id, to_warehouse_id, item_id, quantity, notes } = req.body;
+      if (!from_warehouse_id || !to_warehouse_id || !item_id || !quantity)
+        return res.status(400).json({ error: "Thiếu: from_warehouse_id, to_warehouse_id, item_id, quantity." });
+      if (parseInt(from_warehouse_id) === parseInt(to_warehouse_id))
+        return res.status(400).json({ error: "Kho nguồn và kho đích không được trùng." });
+
+      const inv = await query(
+        "SELECT id, quantity FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
+        { wid: parseInt(from_warehouse_id), iid: parseInt(item_id) },
+      );
+      if (!inv.recordset.length)
+        return res.status(400).json({ error: "Kho nguồn không có vật phẩm này." });
+      if (inv.recordset[0].quantity < parseFloat(quantity))
+        return res.status(400).json({ error: `Tồn kho nguồn không đủ. Hiện có: ${inv.recordset[0].quantity}` });
+
+      await query(
+        "UPDATE relief_inventory SET quantity = quantity - @qty, updated_at = GETDATE() WHERE id = @id",
+        { qty: parseFloat(quantity), id: inv.recordset[0].id },
+      );
+
+      const result = await query(
+        `INSERT INTO supply_transfers (from_warehouse_id, to_warehouse_id, item_id, quantity, transferred_by, notes, status)
+         OUTPUT INSERTED.id
+         VALUES (@fwid, @twid, @iid, @qty, @uid, @notes, 'in_transit')`,
+        { fwid: parseInt(from_warehouse_id), twid: parseInt(to_warehouse_id), iid: parseInt(item_id), qty: parseFloat(quantity), uid: req.user.id, notes: notes || null },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("supply_transfer_new", { id: result.recordset[0].id, to_warehouse_id: parseInt(to_warehouse_id) });
+      res.status(201).json({ id: result.recordset[0].id, message: "Đã tạo lệnh điều vật tư. Kho nguồn đã trừ." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /:id/confirm — Coordinator tỉnh B xác nhận nhận (nhập số thực)
+router.put(
+  "/supply-transfers/:id/confirm",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { confirmed_quantity } = req.body;
+      if (!confirmed_quantity || parseFloat(confirmed_quantity) <= 0)
+        return res.status(400).json({ error: "Số lượng thực nhận phải lớn hơn 0." });
+
+      const st = await query(
+        `SELECT st.*, wt.province_id as to_province_id
+         FROM supply_transfers st JOIN warehouses wt ON st.to_warehouse_id = wt.id
+         WHERE st.id = @id`,
+        { id },
+      );
+      if (!st.recordset.length) return res.status(404).json({ error: "Không tìm thấy transfer." });
+      const row = st.recordset[0];
+      if (row.status !== "in_transit")
+        return res.status(400).json({ error: "Transfer không ở trạng thái in_transit." });
+      if (parseFloat(confirmed_quantity) > row.quantity)
+        return res.status(400).json({ error: `Số thực nhận không vượt quá số điều (${row.quantity}).` });
+
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions WHERE user_id = @uid AND province_id = @prov`,
+          { uid: req.user.id, prov: row.to_province_id },
+        );
+        if (!allowed.recordset.length)
+          return res.status(403).json({ error: "Bạn không có quyền xác nhận kho này." });
+      }
+
+      const actualQty = parseFloat(confirmed_quantity);
+      const diff = row.quantity - actualQty;
+
+      // Cộng kho đích
+      const invDest = await query(
+        "SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
+        { wid: row.to_warehouse_id, iid: row.item_id },
+      );
+      if (invDest.recordset.length) {
+        await query(
+          "UPDATE relief_inventory SET quantity = quantity + @qty, last_restocked = GETDATE(), updated_at = GETDATE() WHERE id = @id",
+          { qty: actualQty, id: invDest.recordset[0].id },
+        );
+      } else {
+        await query(
+          "INSERT INTO relief_inventory (warehouse_id, item_id, quantity, updated_at) VALUES (@wid, @iid, @qty, GETDATE())",
+          { wid: row.to_warehouse_id, iid: row.item_id, qty: actualQty },
+        );
+      }
+
+      // Hoàn lại phần chênh lệch cho kho nguồn nếu nhận thiếu
+      if (diff > 0) {
+        const invSrc = await query(
+          "SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
+          { wid: row.from_warehouse_id, iid: row.item_id },
+        );
+        if (invSrc.recordset.length) {
+          await query(
+            "UPDATE relief_inventory SET quantity = quantity + @qty, updated_at = GETDATE() WHERE id = @id",
+            { qty: diff, id: invSrc.recordset[0].id },
+          );
+        }
+      }
+
+      await query(
+        `UPDATE supply_transfers
+         SET status = 'completed', confirmed_quantity = @qty, confirmed_by = @uid, confirmed_at = GETDATE(), updated_at = GETDATE()
+         WHERE id = @id`,
+        { id, qty: actualQty, uid: req.user.id },
+      );
+      res.json({ message: `Đã xác nhận nhận ${actualQty} đơn vị. Kho đích đã cộng.` });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /:id/cancel — Manager huỷ transfer, hoàn kho nguồn
+router.put(
+  "/supply-transfers/:id/cancel",
+  authenticate,
+  authorize("manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const st = await query(
+        "SELECT id, status, from_warehouse_id, item_id, quantity FROM supply_transfers WHERE id = @id",
+        { id },
+      );
+      if (!st.recordset.length) return res.status(404).json({ error: "Không tìm thấy transfer." });
+      const row = st.recordset[0];
+      if (row.status !== "in_transit")
+        return res.status(400).json({ error: "Chỉ huỷ được khi transfer đang in_transit." });
+
+      const inv = await query(
+        "SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
+        { wid: row.from_warehouse_id, iid: row.item_id },
+      );
+      if (inv.recordset.length) {
+        await query(
+          "UPDATE relief_inventory SET quantity = quantity + @qty, updated_at = GETDATE() WHERE id = @id",
+          { qty: row.quantity, id: inv.recordset[0].id },
+        );
+      }
+      await query(
+        "UPDATE supply_transfers SET status = 'cancelled', updated_at = GETDATE() WHERE id = @id",
+        { id },
+      );
+      res.json({ message: "Đã huỷ transfer. Kho nguồn đã hoàn lại." });
+    } catch (err) { next(err); }
+  },
+);
+
+// ======== VEHICLE TRANSFERS (Manager điều xe liên tỉnh) ========
+
+router.get(
+  "/vehicle-transfers",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const { status } = req.query;
+      let where = "WHERE 1=1";
+      const params = {};
+      if (status) { where += " AND vt.status = @status"; params.status = status; }
+
+      if (req.user.role === "manager" && req.user.region_id) {
+        where += ` AND (
+          fp.region_id = @region_id OR tp.region_id = @region_id)`;
+        params.region_id = req.user.region_id;
+      } else if (req.user.role === "coordinator") {
+        // Coordinator thấy xe đang về tỉnh mình
+        where += ` AND vt.to_province_id IN (
+          SELECT province_id FROM coordinator_regions WHERE user_id = @uid AND province_id IS NOT NULL)`;
+        params.uid = req.user.id;
+      }
+
+      const result = await query(
+        `SELECT vt.*,
+                v.name as vehicle_name, v.plate_number, v.type as vehicle_type,
+                fp.name as from_province_name, tp.name as to_province_name,
+                u.full_name as transferred_by_name,
+                cb.full_name as confirmed_by_name
+         FROM vehicle_transfers vt
+         JOIN vehicles v    ON vt.vehicle_id = v.id
+         JOIN provinces fp  ON vt.from_province_id = fp.id
+         JOIN provinces tp  ON vt.to_province_id = tp.id
+         JOIN users u       ON vt.transferred_by = u.id
+         LEFT JOIN users cb ON vt.confirmed_by = cb.id
+         ${where}
+         ORDER BY vt.created_at DESC`,
+        params,
+      );
+      res.json(result.recordset);
+    } catch (err) { next(err); }
+  },
+);
+
+// POST — Manager tạo lệnh điều xe liên tỉnh, xe → in_transit
+router.post(
+  "/vehicle-transfers",
+  authenticate,
+  authorize("manager"),
+  async (req, res, next) => {
+    try {
+      const { vehicle_id, to_province_id, notes } = req.body;
+      if (!vehicle_id || !to_province_id)
+        return res.status(400).json({ error: "Thiếu: vehicle_id, to_province_id." });
+
+      const veh = await query(
+        "SELECT id, status, province_id FROM vehicles WHERE id = @id",
+        { id: parseInt(vehicle_id) },
+      );
+      if (!veh.recordset.length) return res.status(404).json({ error: "Không tìm thấy xe." });
+      if (veh.recordset[0].status !== "available")
+        return res.status(400).json({ error: "Xe phải ở trạng thái available." });
+      if (veh.recordset[0].province_id === parseInt(to_province_id))
+        return res.status(400).json({ error: "Xe đã ở tỉnh đích rồi." });
+
+      await query(
+        "UPDATE vehicles SET status = 'in_transit', updated_at = GETDATE() WHERE id = @id",
+        { id: parseInt(vehicle_id) },
+      );
+
+      const result = await query(
+        `INSERT INTO vehicle_transfers (vehicle_id, from_province_id, to_province_id, transferred_by, notes, status)
+         OUTPUT INSERTED.id
+         VALUES (@vid, @fpid, @tpid, @uid, @notes, 'in_transit')`,
+        { vid: parseInt(vehicle_id), fpid: veh.recordset[0].province_id, tpid: parseInt(to_province_id), uid: req.user.id, notes: notes || null },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_transfer_new", { id: result.recordset[0].id, to_province_id: parseInt(to_province_id) });
+      res.status(201).json({ id: result.recordset[0].id, message: "Đã tạo lệnh điều xe. Xe đang vận chuyển." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /:id/confirm — Coordinator tỉnh B xác nhận nhận xe
+router.put(
+  "/vehicle-transfers/:id/confirm",
+  authenticate,
+  authorize("manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vt = await query(
+        "SELECT id, status, vehicle_id, to_province_id FROM vehicle_transfers WHERE id = @id",
+        { id },
+      );
+      if (!vt.recordset.length) return res.status(404).json({ error: "Không tìm thấy transfer." });
+      const row = vt.recordset[0];
+      if (row.status !== "in_transit")
+        return res.status(400).json({ error: "Transfer không ở trạng thái in_transit." });
+
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions WHERE user_id = @uid AND province_id = @prov`,
+          { uid: req.user.id, prov: row.to_province_id },
+        );
+        if (!allowed.recordset.length)
+          return res.status(403).json({ error: "Bạn không có quyền xác nhận xe cho tỉnh này." });
+      }
+
+      // Cập nhật xe: available ở tỉnh mới
+      await query(
+        "UPDATE vehicles SET status = 'available', province_id = @prov, updated_at = GETDATE() WHERE id = @id",
+        { id: row.vehicle_id, prov: row.to_province_id },
+      );
+      await query(
+        `UPDATE vehicle_transfers SET status = 'completed', confirmed_by = @uid, confirmed_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`,
+        { id, uid: req.user.id },
+      );
+      res.json({ message: "Đã xác nhận nhận xe. Xe sẵn sàng tại tỉnh mới." });
+    } catch (err) { next(err); }
+  },
+);
+
+// PUT /:id/cancel — Manager huỷ vehicle transfer, xe về available ở tỉnh cũ
+router.put(
+  "/vehicle-transfers/:id/cancel",
+  authenticate,
+  authorize("manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vt = await query(
+        "SELECT id, status, vehicle_id, from_province_id FROM vehicle_transfers WHERE id = @id",
+        { id },
+      );
+      if (!vt.recordset.length) return res.status(404).json({ error: "Không tìm thấy transfer." });
+      const row = vt.recordset[0];
+      if (row.status !== "in_transit")
+        return res.status(400).json({ error: "Chỉ huỷ được khi transfer đang in_transit." });
+
+      await query(
+        "UPDATE vehicles SET status = 'available', province_id = @prov, updated_at = GETDATE() WHERE id = @id",
+        { id: row.vehicle_id, prov: row.from_province_id },
+      );
+      await query(
+        "UPDATE vehicle_transfers SET status = 'cancelled', updated_at = GETDATE() WHERE id = @id",
+        { id },
+      );
+      res.json({ message: "Đã huỷ transfer. Xe trở về tỉnh cũ." });
+    } catch (err) { next(err); }
+  },
+);
+
 module.exports = router;
