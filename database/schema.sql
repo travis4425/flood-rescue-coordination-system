@@ -67,7 +67,7 @@ CREATE TABLE users (
     phone VARCHAR(20),
     avatar_url VARCHAR(500),
     role VARCHAR(30) NOT NULL CHECK (role IN (
-        'admin', 'manager',
+        'admin', 'manager', 'warehouse_manager',
         'coordinator', 'rescue_team'
     )),
     region_id INT REFERENCES regions(id),
@@ -595,5 +595,17 @@ CREATE TABLE vehicle_transfers (
 );
 CREATE INDEX idx_vtransfer_vehicle ON vehicle_transfers(vehicle_id);
 CREATE INDEX idx_vtransfer_status  ON vehicle_transfers(status);
+
+-- *22. MISSION ASSIGNMENTS (Junction table: nhiều thành viên cho 1 nhiệm vụ)
+
+CREATE TABLE mission_assignments (
+    id           INT IDENTITY(1,1) PRIMARY KEY,
+    mission_id   INT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    user_id      INT NOT NULL REFERENCES users(id),
+    assigned_at  DATETIME2 DEFAULT GETDATE(),
+    CONSTRAINT uq_mission_user UNIQUE (mission_id, user_id)
+);
+CREATE INDEX idx_massign_mission ON mission_assignments(mission_id);
+CREATE INDEX idx_massign_user    ON mission_assignments(user_id);
 
 GO
