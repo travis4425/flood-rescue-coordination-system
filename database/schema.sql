@@ -612,4 +612,10 @@ CREATE TABLE mission_assignments (
 CREATE INDEX idx_massign_mission ON mission_assignments(mission_id);
 CREATE INDEX idx_massign_user    ON mission_assignments(user_id);
 
+-- *23. VOUCHER SYSTEM — phiếu bàn giao kho cho đội cứu hộ
+ALTER TABLE relief_distributions ADD voucher_code        VARCHAR(20)  NULL;
+ALTER TABLE relief_distributions ADD warehouse_confirmed BIT          NOT NULL DEFAULT 0;
+ALTER TABLE relief_distributions ADD warehouse_confirmed_at DATETIME2 NULL;
+ALTER TABLE relief_distributions ADD warehouse_confirmed_by INT        NULL REFERENCES users(id);
+
 GO
