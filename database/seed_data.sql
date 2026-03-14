@@ -437,5 +437,214 @@ UPDATE coordinator_regions SET current_workload = 4 WHERE user_id = 7;
 -- Requests: 12 (HCM×8, LA×4) | Missions: 3 | Logs: 8
 -- Weather: 3  | Notifications: 8 | Config: 12 | Audit: 3
 -- ============================================================
+-- Xóa region_id vì không cần (tất cả đều cùng 1 vùng Miền Nam)
+UPDATE users SET region_id = NULL;
+
 PRINT N'✅ Seed data HCM scope inserted successfully';
+GO
+
+-- ============================================================
+-- ADDITIONAL: Thêm đội cứu hộ cho các tỉnh (teams 5-25)
+-- 21 đội mới + 21 leader + 84 thành viên
+-- ============================================================
+
+USE flood_rescue_db;
+GO
+
+DECLARE @h2 VARCHAR(255) = '$2a$10$OS0HPBGhR6NtXxQ/QAWmP.CzeOr947.Q04EIqjt1VrYuwIXLGKH7C';
+
+-- NEW USERS: Leaders (id 38-58) + Members (id 59-142)
+SET IDENTITY_INSERT users ON;
+INSERT INTO users (id, username, email, password_hash, full_name, phone, role, province_id) VALUES
+  -- === LEADERS ===
+  (38,'leader_hcm3', 'leader.hcm3@cuuho.vn', @h2, N'Nguyễn Văn Tân',     '0913100001', 'rescue_team', 1),
+  (39,'leader_hcm4', 'leader.hcm4@cuuho.vn', @h2, N'Trần Thị Bích',      '0913100002', 'rescue_team', 1),
+  (40,'leader_hcm5', 'leader.hcm5@cuuho.vn', @h2, N'Lê Minh Đức',        '0913100003', 'rescue_team', 1),
+  (41,'leader_bd2',  'leader.bd2@cuuho.vn',  @h2, N'Phạm Văn Lộc',       '0913100004', 'rescue_team', 2),
+  (42,'leader_bd3',  'leader.bd3@cuuho.vn',  @h2, N'Võ Thị Nga',         '0913100005', 'rescue_team', 2),
+  (43,'leader_bd4',  'leader.bd4@cuuho.vn',  @h2, N'Đinh Văn Phú',       '0913100006', 'rescue_team', 2),
+  (44,'leader_dn1',  'leader.dn1@cuuho.vn',  @h2, N'Nguyễn Thị Quỳnh',  '0913100007', 'rescue_team', 3),
+  (45,'leader_dn2',  'leader.dn2@cuuho.vn',  @h2, N'Trần Văn Rô',        '0913100008', 'rescue_team', 3),
+  (46,'leader_dn3',  'leader.dn3@cuuho.vn',  @h2, N'Lê Thị Sương',       '0913100009', 'rescue_team', 3),
+  (47,'leader_dn4',  'leader.dn4@cuuho.vn',  @h2, N'Phạm Văn Thông',     '0913100010', 'rescue_team', 3),
+  (48,'leader_la2',  'leader.la2@cuuho.vn',  @h2, N'Võ Văn Uy',          '0913100011', 'rescue_team', 4),
+  (49,'leader_la3',  'leader.la3@cuuho.vn',  @h2, N'Nguyễn Thị Vân',     '0913100012', 'rescue_team', 4),
+  (50,'leader_la4',  'leader.la4@cuuho.vn',  @h2, N'Trần Văn Xuân',      '0913100013', 'rescue_team', 4),
+  (51,'leader_tn1',  'leader.tn1@cuuho.vn',  @h2, N'Lê Văn Yên',         '0913100014', 'rescue_team', 5),
+  (52,'leader_tn2',  'leader.tn2@cuuho.vn',  @h2, N'Phạm Thị Ánh',       '0913100015', 'rescue_team', 5),
+  (53,'leader_tn3',  'leader.tn3@cuuho.vn',  @h2, N'Võ Văn Bắc',         '0913100016', 'rescue_team', 5),
+  (54,'leader_tn4',  'leader.tn4@cuuho.vn',  @h2, N'Đinh Văn Cảnh',      '0913100017', 'rescue_team', 5),
+  (55,'leader_brvt1','leader.brvt1@cuuho.vn',@h2, N'Nguyễn Văn Dần',     '0913100018', 'rescue_team', 6),
+  (56,'leader_brvt2','leader.brvt2@cuuho.vn',@h2, N'Trần Thị Giang',     '0913100019', 'rescue_team', 6),
+  (57,'leader_brvt3','leader.brvt3@cuuho.vn',@h2, N'Lê Văn Hào',         '0913100020', 'rescue_team', 6),
+  (58,'leader_brvt4','leader.brvt4@cuuho.vn',@h2, N'Phạm Thị Hiền',      '0913100021', 'rescue_team', 6),
+  -- === MEMBERS: HCM-03 (team 5) ===
+  (59, 'mem_hcm3_01','mhcm3_01@cuuho.vn', @h2, N'Cao Văn Khoa',     '0914100001', 'rescue_team', 1),
+  (60, 'mem_hcm3_02','mhcm3_02@cuuho.vn', @h2, N'Ngô Thị Linh',     '0914100002', 'rescue_team', 1),
+  (61, 'mem_hcm3_03','mhcm3_03@cuuho.vn', @h2, N'Trịnh Văn Minh',   '0914100003', 'rescue_team', 1),
+  (62, 'mem_hcm3_04','mhcm3_04@cuuho.vn', @h2, N'Hồ Thị Ngân',      '0914100004', 'rescue_team', 1),
+  -- HCM-04 (team 6)
+  (63, 'mem_hcm4_01','mhcm4_01@cuuho.vn', @h2, N'Lưu Văn Phong',    '0914100005', 'rescue_team', 1),
+  (64, 'mem_hcm4_02','mhcm4_02@cuuho.vn', @h2, N'Đặng Thị Quyên',   '0914100006', 'rescue_team', 1),
+  (65, 'mem_hcm4_03','mhcm4_03@cuuho.vn', @h2, N'Bùi Văn Sang',     '0914100007', 'rescue_team', 1),
+  (66, 'mem_hcm4_04','mhcm4_04@cuuho.vn', @h2, N'Phan Thị Tâm',     '0914100008', 'rescue_team', 1),
+  -- HCM-05 (team 7)
+  (67, 'mem_hcm5_01','mhcm5_01@cuuho.vn', @h2, N'Vũ Văn Trung',     '0914100009', 'rescue_team', 1),
+  (68, 'mem_hcm5_02','mhcm5_02@cuuho.vn', @h2, N'Hoàng Thị Uyên',   '0914100010', 'rescue_team', 1),
+  (69, 'mem_hcm5_03','mhcm5_03@cuuho.vn', @h2, N'Chu Văn Vinh',     '0914100011', 'rescue_team', 1),
+  (70, 'mem_hcm5_04','mhcm5_04@cuuho.vn', @h2, N'Lý Thị Xuân',      '0914100012', 'rescue_team', 1),
+  -- BD-02 (team 8)
+  (71, 'mem_bd2_01', 'mbd2_01@cuuho.vn',  @h2, N'Dương Văn An',     '0914100013', 'rescue_team', 2),
+  (72, 'mem_bd2_02', 'mbd2_02@cuuho.vn',  @h2, N'Kiều Thị Bé',      '0914100014', 'rescue_team', 2),
+  (73, 'mem_bd2_03', 'mbd2_03@cuuho.vn',  @h2, N'Mạc Văn Chung',    '0914100015', 'rescue_team', 2),
+  (74, 'mem_bd2_04', 'mbd2_04@cuuho.vn',  @h2, N'Lý Thị Duyên',     '0914100016', 'rescue_team', 2),
+  -- BD-03 (team 9)
+  (75, 'mem_bd3_01', 'mbd3_01@cuuho.vn',  @h2, N'Tạ Văn Giàu',      '0914100017', 'rescue_team', 2),
+  (76, 'mem_bd3_02', 'mbd3_02@cuuho.vn',  @h2, N'Đoàn Thị Hà',      '0914100018', 'rescue_team', 2),
+  (77, 'mem_bd3_03', 'mbd3_03@cuuho.vn',  @h2, N'Thái Văn Khoa',    '0914100019', 'rescue_team', 2),
+  (78, 'mem_bd3_04', 'mbd3_04@cuuho.vn',  @h2, N'Trương Thị Lan',   '0914100020', 'rescue_team', 2),
+  -- BD-04 (team 10)
+  (79, 'mem_bd4_01', 'mbd4_01@cuuho.vn',  @h2, N'Hà Văn Mẫn',       '0914100021', 'rescue_team', 2),
+  (80, 'mem_bd4_02', 'mbd4_02@cuuho.vn',  @h2, N'Ngô Thị Nhung',    '0914100022', 'rescue_team', 2),
+  (81, 'mem_bd4_03', 'mbd4_03@cuuho.vn',  @h2, N'Vương Văn Phước',  '0914100023', 'rescue_team', 2),
+  (82, 'mem_bd4_04', 'mbd4_04@cuuho.vn',  @h2, N'Mai Thị Quế',      '0914100024', 'rescue_team', 2),
+  -- DN-01 (team 11)
+  (83, 'mem_dn1_01', 'mdn1_01@cuuho.vn',  @h2, N'Đỗ Văn Sáng',      '0914100025', 'rescue_team', 3),
+  (84, 'mem_dn1_02', 'mdn1_02@cuuho.vn',  @h2, N'Hà Thị Tâm',       '0914100026', 'rescue_team', 3),
+  (85, 'mem_dn1_03', 'mdn1_03@cuuho.vn',  @h2, N'Ngô Văn Thịnh',    '0914100027', 'rescue_team', 3),
+  (86, 'mem_dn1_04', 'mdn1_04@cuuho.vn',  @h2, N'Lê Thị Uyên',      '0914100028', 'rescue_team', 3),
+  -- DN-02 (team 12)
+  (87, 'mem_dn2_01', 'mdn2_01@cuuho.vn',  @h2, N'Mai Văn Vinh',      '0914100029', 'rescue_team', 3),
+  (88, 'mem_dn2_02', 'mdn2_02@cuuho.vn',  @h2, N'Tô Thị Xuân',      '0914100030', 'rescue_team', 3),
+  (89, 'mem_dn2_03', 'mdn2_03@cuuho.vn',  @h2, N'Quách Văn Yên',    '0914100031', 'rescue_team', 3),
+  (90, 'mem_dn2_04', 'mdn2_04@cuuho.vn',  @h2, N'Từ Thị Yến',       '0914100032', 'rescue_team', 3),
+  -- DN-03 (team 13)
+  (91, 'mem_dn3_01', 'mdn3_01@cuuho.vn',  @h2, N'Vương Văn An',      '0914100033', 'rescue_team', 3),
+  (92, 'mem_dn3_02', 'mdn3_02@cuuho.vn',  @h2, N'Diệp Thị Bảo',     '0914100034', 'rescue_team', 3),
+  (93, 'mem_dn3_03', 'mdn3_03@cuuho.vn',  @h2, N'Tôn Văn Cảnh',     '0914100035', 'rescue_team', 3),
+  (94, 'mem_dn3_04', 'mdn3_04@cuuho.vn',  @h2, N'Hứa Thị Dung',     '0914100036', 'rescue_team', 3),
+  -- DN-04 (team 14)
+  (95, 'mem_dn4_01', 'mdn4_01@cuuho.vn',  @h2, N'Lưu Văn Đạt',      '0914100037', 'rescue_team', 3),
+  (96, 'mem_dn4_02', 'mdn4_02@cuuho.vn',  @h2, N'Trần Thị Giao',    '0914100038', 'rescue_team', 3),
+  (97, 'mem_dn4_03', 'mdn4_03@cuuho.vn',  @h2, N'Nguyễn Văn Hùng',  '0914100039', 'rescue_team', 3),
+  (98, 'mem_dn4_04', 'mdn4_04@cuuho.vn',  @h2, N'Lê Thị Khanh',     '0914100040', 'rescue_team', 3),
+  -- LA-02 (team 15)
+  (99, 'mem_la2_01', 'mla2_01@cuuho.vn',  @h2, N'Phạm Văn Long',     '0914100041', 'rescue_team', 4),
+  (100,'mem_la2_02', 'mla2_02@cuuho.vn',  @h2, N'Võ Thị Mai',        '0914100042', 'rescue_team', 4),
+  (101,'mem_la2_03', 'mla2_03@cuuho.vn',  @h2, N'Đặng Văn Minh',     '0914100043', 'rescue_team', 4),
+  (102,'mem_la2_04', 'mla2_04@cuuho.vn',  @h2, N'Bùi Thị Ngọc',     '0914100044', 'rescue_team', 4),
+  -- LA-03 (team 16)
+  (103,'mem_la3_01', 'mla3_01@cuuho.vn',  @h2, N'Hồ Văn Phong',      '0914100045', 'rescue_team', 4),
+  (104,'mem_la3_02', 'mla3_02@cuuho.vn',  @h2, N'Huỳnh Thị Phương',  '0914100046', 'rescue_team', 4),
+  (105,'mem_la3_03', 'mla3_03@cuuho.vn',  @h2, N'Dương Văn Quang',   '0914100047', 'rescue_team', 4),
+  (106,'mem_la3_04', 'mla3_04@cuuho.vn',  @h2, N'Đinh Thị Tâm',      '0914100048', 'rescue_team', 4),
+  -- LA-04 (team 17)
+  (107,'mem_la4_01', 'mla4_01@cuuho.vn',  @h2, N'Phan Văn Thắng',    '0914100049', 'rescue_team', 4),
+  (108,'mem_la4_02', 'mla4_02@cuuho.vn',  @h2, N'Vũ Thị Thu',        '0914100050', 'rescue_team', 4),
+  (109,'mem_la4_03', 'mla4_03@cuuho.vn',  @h2, N'Hoàng Văn Toàn',    '0914100051', 'rescue_team', 4),
+  (110,'mem_la4_04', 'mla4_04@cuuho.vn',  @h2, N'Lý Thị Trang',      '0914100052', 'rescue_team', 4),
+  -- TN-01 (team 18)
+  (111,'mem_tn1_01', 'mtn1_01@cuuho.vn',  @h2, N'Tô Văn Tú',         '0914100053', 'rescue_team', 5),
+  (112,'mem_tn1_02', 'mtn1_02@cuuho.vn',  @h2, N'Ngô Thị Tuyết',     '0914100054', 'rescue_team', 5),
+  (113,'mem_tn1_03', 'mtn1_03@cuuho.vn',  @h2, N'Trịnh Văn Vinh',    '0914100055', 'rescue_team', 5),
+  (114,'mem_tn1_04', 'mtn1_04@cuuho.vn',  @h2, N'Cao Thị Vân',       '0914100056', 'rescue_team', 5),
+  -- TN-02 (team 19)
+  (115,'mem_tn2_01', 'mtn2_01@cuuho.vn',  @h2, N'Đỗ Văn Xuân',       '0914100057', 'rescue_team', 5),
+  (116,'mem_tn2_02', 'mtn2_02@cuuho.vn',  @h2, N'Hà Thị Yến',        '0914100058', 'rescue_team', 5),
+  (117,'mem_tn2_03', 'mtn2_03@cuuho.vn',  @h2, N'Mai Văn An',         '0914100059', 'rescue_team', 5),
+  (118,'mem_tn2_04', 'mtn2_04@cuuho.vn',  @h2, N'Nguyễn Thị Bích',   '0914100060', 'rescue_team', 5),
+  -- TN-03 (team 20)
+  (119,'mem_tn3_01', 'mtn3_01@cuuho.vn',  @h2, N'Trần Văn Cường',    '0914100061', 'rescue_team', 5),
+  (120,'mem_tn3_02', 'mtn3_02@cuuho.vn',  @h2, N'Lê Thị Châu',       '0914100062', 'rescue_team', 5),
+  (121,'mem_tn3_03', 'mtn3_03@cuuho.vn',  @h2, N'Phạm Văn Dũng',     '0914100063', 'rescue_team', 5),
+  (122,'mem_tn3_04', 'mtn3_04@cuuho.vn',  @h2, N'Võ Thị Dung',       '0914100064', 'rescue_team', 5),
+  -- TN-04 (team 21)
+  (123,'mem_tn4_01', 'mtn4_01@cuuho.vn',  @h2, N'Đặng Văn Đức',      '0914100065', 'rescue_team', 5),
+  (124,'mem_tn4_02', 'mtn4_02@cuuho.vn',  @h2, N'Bùi Thị Giang',     '0914100066', 'rescue_team', 5),
+  (125,'mem_tn4_03', 'mtn4_03@cuuho.vn',  @h2, N'Đinh Văn Hà',       '0914100067', 'rescue_team', 5),
+  (126,'mem_tn4_04', 'mtn4_04@cuuho.vn',  @h2, N'Phan Thị Hương',    '0914100068', 'rescue_team', 5),
+  -- BRVT-01 (team 22)
+  (127,'mem_brvt1_01','mbrvt1_01@cuuho.vn',@h2, N'Vũ Văn Khoa',      '0914100069', 'rescue_team', 6),
+  (128,'mem_brvt1_02','mbrvt1_02@cuuho.vn',@h2, N'Hoàng Thị Lan',    '0914100070', 'rescue_team', 6),
+  (129,'mem_brvt1_03','mbrvt1_03@cuuho.vn',@h2, N'Lý Văn Long',      '0914100071', 'rescue_team', 6),
+  (130,'mem_brvt1_04','mbrvt1_04@cuuho.vn',@h2, N'Tô Thị Mai',       '0914100072', 'rescue_team', 6),
+  -- BRVT-02 (team 23)
+  (131,'mem_brvt2_01','mbrvt2_01@cuuho.vn',@h2, N'Ngô Văn Minh',     '0914100073', 'rescue_team', 6),
+  (132,'mem_brvt2_02','mbrvt2_02@cuuho.vn',@h2, N'Trịnh Thị Nga',    '0914100074', 'rescue_team', 6),
+  (133,'mem_brvt2_03','mbrvt2_03@cuuho.vn',@h2, N'Hồ Văn Nam',       '0914100075', 'rescue_team', 6),
+  (134,'mem_brvt2_04','mbrvt2_04@cuuho.vn',@h2, N'Huỳnh Thị Ngọc',  '0914100076', 'rescue_team', 6),
+  -- BRVT-03 (team 24)
+  (135,'mem_brvt3_01','mbrvt3_01@cuuho.vn',@h2, N'Dương Văn Phong',  '0914100077', 'rescue_team', 6),
+  (136,'mem_brvt3_02','mbrvt3_02@cuuho.vn',@h2, N'Đinh Thị Phương',  '0914100078', 'rescue_team', 6),
+  (137,'mem_brvt3_03','mbrvt3_03@cuuho.vn',@h2, N'Phan Văn Quân',    '0914100079', 'rescue_team', 6),
+  (138,'mem_brvt3_04','mbrvt3_04@cuuho.vn',@h2, N'Vũ Thị Quỳnh',     '0914100080', 'rescue_team', 6),
+  -- BRVT-04 (team 25)
+  (139,'mem_brvt4_01','mbrvt4_01@cuuho.vn',@h2, N'Hoàng Văn Sơn',   '0914100081', 'rescue_team', 6),
+  (140,'mem_brvt4_02','mbrvt4_02@cuuho.vn',@h2, N'Cao Thị Tâm',      '0914100082', 'rescue_team', 6),
+  (141,'mem_brvt4_03','mbrvt4_03@cuuho.vn',@h2, N'Ngô Văn Thắng',    '0914100083', 'rescue_team', 6),
+  (142,'mem_brvt4_04','mbrvt4_04@cuuho.vn',@h2, N'Lý Thị Thu',       '0914100084', 'rescue_team', 6);
+SET IDENTITY_INSERT users OFF;
+
+-- NEW RESCUE TEAMS (id 5-25)
+SET IDENTITY_INSERT rescue_teams ON;
+INSERT INTO rescue_teams (id, name, code, leader_id, province_id, district_id, phone, capacity, specialization, status, current_latitude, current_longitude) VALUES
+  -- HCM (3 đội mới)
+  (5,  N'Đội Cứu Hộ Quận 1',            'HCM-03', 38, 1, 2,  '0900100005', 8, N'medical,evacuation',         'available', 10.7769, 106.7009),
+  (6,  N'Đội Cứu Hộ Bình Chánh',         'HCM-04', 39, 1, 4,  '0900100006', 8, N'water_rescue,evacuation',    'available', 10.6886, 106.5735),
+  (7,  N'Đội Cứu Hộ Nhà Bè',             'HCM-05', 40, 1, 5,  '0900100007', 8, N'water_rescue,search_rescue', 'available', 10.6877, 106.7345),
+  -- BD (3 đội mới)
+  (8,  N'Đội Cứu Hộ Thủ Dầu Một',        'BD-02',  41, 2, 6,  '0900100008', 8, N'evacuation,water_rescue',    'available', 11.1353, 106.6583),
+  (9,  N'Đội Cứu Hộ Dĩ An',              'BD-03',  42, 2, 8,  '0900100009', 8, N'water_rescue,evacuation',    'available', 10.9070, 106.7660),
+  (10, N'Đội Cứu Hộ Bến Cát',             'BD-04',  43, 2, 9,  '0900100010', 8, N'search_rescue,evacuation',   'standby',   11.2200, 106.5700),
+  -- DN (4 đội mới)
+  (11, N'Đội Cứu Hộ Biên Hòa',            'DN-01',  44, 3, 10, '0900100011', 8, N'water_rescue,medical',       'available', 10.9596, 106.8431),
+  (12, N'Đội Cứu Hộ Nhơn Trạch',          'DN-02',  45, 3, 11, '0900100012', 8, N'water_rescue,evacuation',    'available', 10.7800, 106.9600),
+  (13, N'Đội Cứu Hộ Long Thành',           'DN-03',  46, 3, 12, '0900100013', 8, N'search_rescue,water_rescue', 'available', 10.8600, 107.0400),
+  (14, N'Đội Cứu Hộ Đồng Nai 4',          'DN-04',  47, 3, 10, '0900100014', 8, N'evacuation,medical',         'standby',   10.9596, 106.8431),
+  -- LA (3 đội mới)
+  (15, N'Đội Cứu Hộ Tân An',              'LA-02',  48, 4, 13, '0900100015', 8, N'water_rescue,evacuation',    'available', 10.5325, 106.4131),
+  (16, N'Đội Cứu Hộ Đức Hòa',             'LA-03',  49, 4, 14, '0900100016', 8, N'water_rescue,search_rescue', 'available', 10.8800, 106.2800),
+  (17, N'Đội Cứu Hộ Cần Giuộc',           'LA-04',  50, 4, 16, '0900100017', 8, N'medical,evacuation',         'available', 10.5500, 106.6300),
+  -- TN (4 đội mới)
+  (18, N'Đội Cứu Hộ TP Tây Ninh',         'TN-01',  51, 5, 17, '0900100018', 8, N'evacuation,water_rescue',    'available', 11.3103, 106.0982),
+  (19, N'Đội Cứu Hộ Gò Dầu',              'TN-02',  52, 5, 18, '0900100019', 8, N'water_rescue,evacuation',    'available', 11.0800, 106.2600),
+  (20, N'Đội Cứu Hộ Trảng Bàng',          'TN-03',  53, 5, 19, '0900100020', 8, N'search_rescue,evacuation',   'standby',   11.0200, 106.3500),
+  (21, N'Đội Cứu Hộ Dương Minh Châu',     'TN-04',  54, 5, 17, '0900100021', 8, N'medical,water_rescue',       'available', 11.2000, 106.1500),
+  -- BRVT (4 đội mới)
+  (22, N'Đội Cứu Hộ TP Bà Rịa',           'BRVT-01',55, 6, 20, '0900100022', 8, N'water_rescue,evacuation',    'available', 10.4993, 107.1745),
+  (23, N'Đội Cứu Hộ Vũng Tàu',            'BRVT-02',56, 6, 21, '0900100023', 8, N'search_rescue,water_rescue', 'available', 10.4114, 107.1362),
+  (24, N'Đội Cứu Hộ Long Điền',            'BRVT-03',57, 6, 22, '0900100024', 8, N'evacuation,medical',         'standby',   10.4600, 107.2300),
+  (25, N'Đội Cứu Hộ Xuyên Mộc',           'BRVT-04',58, 6, 23, '0900100025', 8, N'water_rescue,evacuation',    'available', 10.5700, 107.4100);
+SET IDENTITY_INSERT rescue_teams OFF;
+
+-- NEW RESCUE TEAM MEMBERS (5 người/đội: 1 leader + 4 members)
+INSERT INTO rescue_team_members (team_id, user_id, role_in_team) VALUES
+  (5,  38,'leader'),(5,  59,'member'),(5,  60,'medic'), (5,  61,'member'),(5,  62,'driver'),
+  (6,  39,'leader'),(6,  63,'member'),(6,  64,'medic'), (6,  65,'member'),(6,  66,'driver'),
+  (7,  40,'leader'),(7,  67,'member'),(7,  68,'medic'), (7,  69,'member'),(7,  70,'driver'),
+  (8,  41,'leader'),(8,  71,'member'),(8,  72,'medic'), (8,  73,'member'),(8,  74,'driver'),
+  (9,  42,'leader'),(9,  75,'member'),(9,  76,'medic'), (9,  77,'member'),(9,  78,'driver'),
+  (10, 43,'leader'),(10, 79,'member'),(10, 80,'medic'), (10, 81,'member'),(10, 82,'driver'),
+  (11, 44,'leader'),(11, 83,'member'),(11, 84,'medic'), (11, 85,'member'),(11, 86,'driver'),
+  (12, 45,'leader'),(12, 87,'member'),(12, 88,'medic'), (12, 89,'member'),(12, 90,'driver'),
+  (13, 46,'leader'),(13, 91,'member'),(13, 92,'medic'), (13, 93,'member'),(13, 94,'driver'),
+  (14, 47,'leader'),(14, 95,'member'),(14, 96,'medic'), (14, 97,'member'),(14, 98,'driver'),
+  (15, 48,'leader'),(15, 99,'member'),(15,100,'medic'), (15,101,'member'),(15,102,'driver'),
+  (16, 49,'leader'),(16,103,'member'),(16,104,'medic'), (16,105,'member'),(16,106,'driver'),
+  (17, 50,'leader'),(17,107,'member'),(17,108,'medic'), (17,109,'member'),(17,110,'driver'),
+  (18, 51,'leader'),(18,111,'member'),(18,112,'medic'), (18,113,'member'),(18,114,'driver'),
+  (19, 52,'leader'),(19,115,'member'),(19,116,'medic'), (19,117,'member'),(19,118,'driver'),
+  (20, 53,'leader'),(20,119,'member'),(20,120,'medic'), (20,121,'member'),(20,122,'driver'),
+  (21, 54,'leader'),(21,123,'member'),(21,124,'medic'), (21,125,'member'),(21,126,'driver'),
+  (22, 55,'leader'),(22,127,'member'),(22,128,'medic'), (22,129,'member'),(22,130,'driver'),
+  (23, 56,'leader'),(23,131,'member'),(23,132,'medic'), (23,133,'member'),(23,134,'driver'),
+  (24, 57,'leader'),(24,135,'member'),(24,136,'medic'), (24,137,'member'),(24,138,'driver'),
+  (25, 58,'leader'),(25,139,'member'),(25,140,'medic'), (25,141,'member'),(25,142,'driver');
+
+-- ============================================================
+-- SUMMARY (updated)
+-- Teams: 25 (HCM×5, BD×4, DN×4, LA×4, TN×4, BRVT×4)
+-- Users: 142 (1 admin, 1 wm, 1 mgr, 6 coord, 25 leader, 108 member)
+-- ============================================================
+PRINT N'✅ Additional 21 teams inserted (total 25 teams, 142 users)';
 GO
