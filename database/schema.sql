@@ -271,6 +271,7 @@ CREATE TABLE vehicles (
     capacity INT,
     province_id INT REFERENCES provinces(id),
     team_id INT REFERENCES rescue_teams(id),
+    warehouse_id INT,                               -- kho quản lý xe này
     status VARCHAR(20) DEFAULT 'available' CHECK (status IN (
         'available', 'in_use', 'maintenance', 'retired'
     )),
@@ -302,6 +303,9 @@ CREATE TABLE warehouses (
     status VARCHAR(20) DEFAULT 'active',
     created_at DATETIME2 DEFAULT GETDATE()
 );
+
+ALTER TABLE vehicles ADD CONSTRAINT fk_vehicles_warehouse
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id);
 
 -- *13. RELIEF ITEMS & INVENTORY
 
