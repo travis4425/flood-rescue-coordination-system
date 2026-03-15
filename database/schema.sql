@@ -65,12 +65,10 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     full_name NVARCHAR(100) NOT NULL,
     phone VARCHAR(20),
-    avatar_url VARCHAR(500),
     role VARCHAR(30) NOT NULL CHECK (role IN (
         'admin', 'manager', 'warehouse_manager',
         'coordinator', 'rescue_team'
     )),
-    region_id INT REFERENCES regions(id),
     province_id INT REFERENCES provinces(id),
     is_active BIT DEFAULT 1,
     last_login DATETIME2,
