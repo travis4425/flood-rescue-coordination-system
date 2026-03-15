@@ -1,6 +1,11 @@
 const router = require("express").Router();
 const { query } = require("../config/database");
 const { authenticate, authorize } = require("../middlewares/auth");
+const crypto = require("crypto");
+
+function genVoucherCode() {
+  return "VT-" + crypto.randomBytes(4).toString("hex").toUpperCase();
+}
 
 // ======== VEHICLES ========
 
@@ -467,11 +472,13 @@ router.post(
         { qty: parseFloat(quantity), id: inv.recordset[0].id },
       );
 
+      const voucher = genVoucherCode();
+
       const result = await query(
         `INSERT INTO relief_distributions
-           (distribution_type, team_id, warehouse_id, item_id, quantity, distributed_by, notes, status)
+           (distribution_type, team_id, warehouse_id, item_id, quantity, distributed_by, notes, status, voucher_code)
          OUTPUT INSERTED.id
-         VALUES ('issue', @team_id, @warehouse_id, @item_id, @quantity, @user_id, @notes, 'issued')`,
+         VALUES ('issue', @team_id, @warehouse_id, @item_id, @quantity, @user_id, @notes, 'issued', @voucher)`,
         {
           team_id: parseInt(team_id),
           warehouse_id: parseInt(warehouse_id),
@@ -479,6 +486,7 @@ router.post(
           quantity: parseFloat(quantity),
           user_id: req.user.id,
           notes: notes || null,
+          voucher,
         },
       );
 
@@ -490,6 +498,7 @@ router.post(
         });
       res.status(201).json({
         id: result.recordset[0].id,
+        voucher_code: voucher,
         message: "Cấp phát thành công. Tồn kho đã trừ.",
       });
     } catch (err) {
@@ -507,7 +516,7 @@ router.put(
     try {
       const id = parseInt(req.params.id);
       const dist = await query(
-        `SELECT rd.id, rd.status, rd.team_id, rt.leader_id
+        `SELECT rd.id, rd.status, rd.team_id, rd.warehouse_confirmed, rt.leader_id
          FROM relief_distributions rd
          JOIN rescue_teams rt ON rd.team_id = rt.id
          WHERE rd.id = @id`,
@@ -524,12 +533,57 @@ router.put(
         return res
           .status(400)
           .json({ error: "Chỉ xác nhận được khi trạng thái là 'issued'." });
+      if (!row.warehouse_confirmed)
+        return res
+          .status(400)
+          .json({ error: "Kho chưa xác nhận bàn giao. Vui lòng chờ kho xác nhận trước." });
 
       await query(
         `UPDATE relief_distributions SET status = 'confirmed', confirmed_at = GETDATE() WHERE id = @id`,
         { id },
       );
       res.json({ message: "Đã xác nhận nhận hàng." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/distributions/:id/warehouse-confirm — Kho xác nhận đã bàn giao hàng cho team
+router.put(
+  "/distributions/:id/warehouse-confirm",
+  authenticate,
+  authorize("manager", "warehouse_manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const dist = await query(
+        `SELECT rd.id, rd.status, rd.warehouse_confirmed, rd.warehouse_id
+         FROM relief_distributions rd
+         WHERE rd.id = @id`,
+        { id },
+      );
+      if (!dist.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = dist.recordset[0];
+      if (row.status !== "issued")
+        return res.status(400).json({ error: "Chỉ xác nhận bàn giao khi trạng thái là 'issued'." });
+      if (row.warehouse_confirmed)
+        return res.status(400).json({ error: "Phiếu này đã được xác nhận bàn giao rồi." });
+
+      await query(
+        `UPDATE relief_distributions
+         SET warehouse_confirmed = 1,
+             warehouse_confirmed_at = GETDATE(),
+             warehouse_confirmed_by = @by
+         WHERE id = @id`,
+        { id, by: req.user.id },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("distribution_warehouse_confirmed", { id });
+
+      res.json({ message: "Đã xác nhận bàn giao. Team có thể xác nhận nhận hàng." });
     } catch (err) {
       next(err);
     }
