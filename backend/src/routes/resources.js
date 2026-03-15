@@ -137,6 +137,13 @@ router.get("/warehouses/map", async (req, res, next) => {
 
 router.get("/warehouses", authenticate, async (req, res, next) => {
   try {
+    const { province_id } = req.query;
+    const params = {};
+    let extraWhere = "";
+    if (province_id) {
+      extraWhere = " AND w.province_id = @province_id";
+      params.province_id = parseInt(province_id);
+    }
     const result = await query(
       `SELECT w.*, p.name as province_name, d.name as district_name,
               um.full_name as manager_name,
@@ -146,8 +153,9 @@ router.get("/warehouses", authenticate, async (req, res, next) => {
        LEFT JOIN districts d WITH (NOLOCK) ON w.district_id = d.id
        LEFT JOIN users um WITH (NOLOCK) ON w.manager_id = um.id
        LEFT JOIN users uc WITH (NOLOCK) ON w.coordinator_id = uc.id
-       WHERE w.status = 'active'
+       WHERE w.status = 'active'${extraWhere}
        ORDER BY w.warehouse_type, w.name`,
+      params,
     );
     res.json(result.recordset);
   } catch (err) {
@@ -398,9 +406,6 @@ router.get(
         where += ` AND w.province_id IN (
           SELECT province_id FROM coordinator_regions WHERE user_id = @coord_uid AND province_id IS NOT NULL)`;
         params.coord_uid = req.user.id;
-      } else if (req.user.role === "manager" && req.user.region_id) {
-        where += ` AND w.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)`;
-        params.region_id = req.user.region_id;
       } else if (req.user.role === "rescue_team") {
         // Team leader chỉ thấy distributions của đội mình
         where += ` AND rd.team_id = (SELECT id FROM rescue_teams WHERE leader_id = @uid)`;
@@ -643,11 +648,11 @@ router.put(
   },
 );
 
-// PUT /api/resources/distributions/:id/confirm-return — Coordinator xác nhận nhận lại hàng dư
+// PUT /api/resources/distributions/:id/confirm-return — Kho xác nhận nhận lại hàng dư
 router.put(
   "/distributions/:id/confirm-return",
   authenticate,
-  authorize("manager", "warehouse_manager", "coordinator"),
+  authorize("manager", "warehouse_manager"),
   async (req, res, next) => {
     try {
       const id = parseInt(req.params.id);
@@ -953,9 +958,6 @@ router.get(
         where += ` AND v.province_id IN (
           SELECT province_id FROM coordinator_regions WHERE user_id = @uid AND province_id IS NOT NULL)`;
         params.uid = req.user.id;
-      } else if (req.user.role === "manager" && req.user.region_id) {
-        where += ` AND v.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)`;
-        params.region_id = req.user.region_id;
       } else if (req.user.role === "rescue_team") {
         where += ` AND vd.team_id = (SELECT id FROM rescue_teams WHERE leader_id = @uid)`;
         params.uid = req.user.id;
@@ -966,12 +968,14 @@ router.get(
                 v.name as vehicle_name, v.plate_number, v.type as vehicle_type,
                 rt.name as team_name,
                 u.full_name as dispatched_by_name,
-                rcb.full_name as return_confirmed_by_name
+                rcb.full_name as return_confirmed_by_name,
+                wcb.full_name as warehouse_confirmed_by_name
          FROM vehicle_dispatches vd
          JOIN vehicles v          ON vd.vehicle_id = v.id
          JOIN rescue_teams rt     ON vd.team_id = rt.id
          JOIN users u             ON vd.dispatched_by = u.id
          LEFT JOIN users rcb      ON vd.return_confirmed_by = rcb.id
+         LEFT JOIN users wcb      ON vd.warehouse_confirmed_by = wcb.id
          ${where}
          ORDER BY vd.created_at DESC`,
         params,
@@ -1054,6 +1058,38 @@ router.post(
   },
 );
 
+// PUT /api/resources/vehicle-dispatches/:id/warehouse-confirm — Kho xác nhận đã bàn giao xe
+router.put(
+  "/vehicle-dispatches/:id/warehouse-confirm",
+  authenticate,
+  authorize("manager", "warehouse_manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vd = await query(
+        `SELECT id, status, warehouse_confirmed FROM vehicle_dispatches WHERE id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = vd.recordset[0];
+      if (row.status !== "dispatched")
+        return res.status(400).json({ error: "Chỉ xác nhận khi xe đang ở trạng thái 'dispatched'." });
+      if (row.warehouse_confirmed)
+        return res.status(400).json({ error: "Xe đã được xác nhận bàn giao trước đó." });
+
+      await query(
+        `UPDATE vehicle_dispatches SET warehouse_confirmed = 1, warehouse_confirmed_at = GETDATE(),
+         warehouse_confirmed_by = @uid, updated_at = GETDATE() WHERE id = @id`,
+        { id, uid: req.user.id },
+      );
+      res.json({ message: "Đã xác nhận bàn giao xe. Đội cứu hộ có thể xác nhận nhận xe." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // PUT /api/resources/vehicle-dispatches/:id/confirm — Team leader xác nhận đã nhận xe
 router.put(
   "/vehicle-dispatches/:id/confirm",
@@ -1063,7 +1099,7 @@ router.put(
     try {
       const id = parseInt(req.params.id);
       const vd = await query(
-        `SELECT vd.id, vd.status, vd.team_id, rt.leader_id
+        `SELECT vd.id, vd.status, vd.warehouse_confirmed, vd.team_id, rt.leader_id
          FROM vehicle_dispatches vd
          JOIN rescue_teams rt ON vd.team_id = rt.id
          WHERE vd.id = @id`,
@@ -1076,6 +1112,10 @@ router.put(
         return res
           .status(403)
           .json({ error: "Bạn không phải trưởng đội nhận xe này." });
+      if (!row.warehouse_confirmed)
+        return res
+          .status(400)
+          .json({ error: "Kho chưa xác nhận bàn giao xe. Vui lòng chờ quản lý kho xác nhận." });
       if (row.status !== "dispatched")
         return res
           .status(400)
@@ -1135,11 +1175,11 @@ router.put(
   },
 );
 
-// PUT /api/resources/vehicle-dispatches/:id/confirm-return — Coordinator xác nhận nhận lại xe
+// PUT /api/resources/vehicle-dispatches/:id/confirm-return — Kho xác nhận nhận lại xe
 router.put(
   "/vehicle-dispatches/:id/confirm-return",
   authenticate,
-  authorize("manager", "warehouse_manager", "coordinator"),
+  authorize("manager", "warehouse_manager"),
   async (req, res, next) => {
     try {
       const id = parseInt(req.params.id);
@@ -1189,6 +1229,108 @@ router.put(
   },
 );
 
+// PUT /api/resources/vehicle-dispatches/:id/report-incident — Team leader báo hỏng/mất xe
+router.put(
+  "/vehicle-dispatches/:id/report-incident",
+  authenticate,
+  authorize("rescue_team"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { incident_type, incident_note } = req.body;
+      if (!["damaged", "lost"].includes(incident_type))
+        return res.status(400).json({ error: "Loại sự cố phải là 'damaged' hoặc 'lost'." });
+
+      const vd = await query(
+        `SELECT vd.id, vd.status, vd.vehicle_id, rt.leader_id
+         FROM vehicle_dispatches vd
+         JOIN rescue_teams rt ON vd.team_id = rt.id
+         WHERE vd.id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = vd.recordset[0];
+      if (row.leader_id !== req.user.id)
+        return res.status(403).json({ error: "Bạn không phải trưởng đội." });
+      if (row.status !== "confirmed")
+        return res.status(400).json({ error: "Chỉ báo sự cố khi đang sử dụng xe." });
+
+      // Dispatch → incident_pending, chờ kho xác nhận tình trạng thực tế
+      await query(
+        `UPDATE vehicle_dispatches
+         SET incident_type = @type, incident_note = @note,
+             incident_reported_at = GETDATE(), incident_reported_by = @uid,
+             status = 'incident_pending', updated_at = GETDATE()
+         WHERE id = @id`,
+        { id, type: incident_type, note: incident_note || null, uid: req.user.id },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_incident_reported", { id, incident_type });
+
+      res.json({ message: "Đã gửi báo cáo sự cố. Kho sẽ xác nhận tình trạng thực tế." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/vehicle-dispatches/:id/confirm-incident — Kho xác nhận tình trạng sự cố xe
+router.put(
+  "/vehicle-dispatches/:id/confirm-incident",
+  authenticate,
+  authorize("manager", "warehouse_manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { confirmed_type, confirmed_note } = req.body;
+      // confirmed_type: 'damaged' | 'lost' | 'ok' (tìm lại được / hỏng nhẹ)
+      if (!["damaged", "lost", "ok"].includes(confirmed_type))
+        return res.status(400).json({ error: "confirmed_type phải là damaged / lost / ok." });
+
+      const vd = await query(
+        `SELECT id, status, vehicle_id, incident_type FROM vehicle_dispatches WHERE id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = vd.recordset[0];
+      if (row.status !== "incident_pending")
+        return res.status(400).json({ error: "Không có sự cố cần xác nhận." });
+
+      // Xác định trạng thái xe sau khi kho xác nhận
+      const vehicleStatus = confirmed_type === "lost" ? "lost"
+        : confirmed_type === "damaged" ? "maintenance"
+        : "available";
+
+      await query(
+        `UPDATE vehicle_dispatches
+         SET status = 'cancelled',
+             incident_note = COALESCE(@note, incident_note),
+             incident_type = @ctype,
+             updated_at = GETDATE()
+         WHERE id = @id`,
+        { id, ctype: confirmed_type, note: confirmed_note || null },
+      );
+      await query(
+        "UPDATE vehicles SET status = @vs, updated_at = GETDATE() WHERE id = @vid",
+        { vs: vehicleStatus, vid: row.vehicle_id },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_incident_confirmed", { id, confirmed_type });
+
+      const msg = confirmed_type === "lost" ? "Đã xác nhận xe mất. Coordinator sẽ được thông báo."
+        : confirmed_type === "damaged" ? "Đã xác nhận xe hỏng. Xe chuyển sang bảo trì."
+        : "Đã xác nhận xe ổn, trả về available.";
+      res.json({ message: msg });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // ======== SUPPLY TRANSFERS (Manager điều vật tư liên tỉnh) ========
 
 router.get(
@@ -1205,12 +1347,7 @@ router.get(
         params.status = status;
       }
 
-      if (req.user.role === "manager" && req.user.region_id) {
-        where += ` AND (
-          wf.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)
-          OR wt.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id))`;
-        params.region_id = req.user.region_id;
-      } else if (req.user.role === "coordinator") {
+      if (req.user.role === "coordinator") {
         // Coordinator chỉ thấy transfer đến tỉnh mình
         where += ` AND wt.province_id IN (
           SELECT province_id FROM coordinator_regions WHERE user_id = @uid AND province_id IS NOT NULL)`;
@@ -1459,11 +1596,7 @@ router.get(
         params.status = status;
       }
 
-      if (req.user.role === "manager" && req.user.region_id) {
-        where += ` AND (
-          fp.region_id = @region_id OR tp.region_id = @region_id)`;
-        params.region_id = req.user.region_id;
-      } else if (req.user.role === "coordinator") {
+      if (req.user.role === "coordinator") {
         // Coordinator thấy xe đang về tỉnh mình
         where += ` AND vt.to_province_id IN (
           SELECT province_id FROM coordinator_regions WHERE user_id = @uid AND province_id IS NOT NULL)`;
