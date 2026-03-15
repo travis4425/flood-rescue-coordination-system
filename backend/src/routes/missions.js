@@ -60,7 +60,13 @@ router.get("/", authenticate, async (req, res, next) => {
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.code as team_code,
               v.name as vehicle_name, v.plate_number,
-              au.id as assigned_to_user_id, au.full_name as assigned_to_name
+              au.id as assigned_to_user_id, au.full_name as assigned_to_name,
+              (SELECT STRING_AGG(CAST(ma.user_id AS VARCHAR), ',')
+               FROM mission_assignments ma WHERE ma.mission_id = m.id) as assigned_member_ids,
+              (SELECT STRING_AGG(u2.full_name, ', ')
+               FROM mission_assignments ma
+               JOIN users u2 ON ma.user_id = u2.id
+               WHERE ma.mission_id = m.id) as assigned_members_names
        FROM missions m
        JOIN rescue_requests rr ON m.request_id = rr.id
        LEFT JOIN incident_types it ON rr.incident_type_id = it.id
@@ -164,7 +170,11 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
       }
 
       // Free team when mission ends — only if no more active missions across ALL tasks
-      if (status === "completed" || status === "aborted" || status === "failed") {
+      if (
+        status === "completed" ||
+        status === "aborted" ||
+        status === "failed"
+      ) {
         const activeMissions = await query(
           `SELECT COUNT(*) as cnt FROM missions
            WHERE team_id = @team_id AND status NOT IN ('completed', 'aborted', 'failed')`,
@@ -200,18 +210,42 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
               { status: taskStatus, id: taskGroupId },
             );
             const io2 = req.app.get("io");
-            if (io2) io2.emit("task_updated", { task_group_id: taskGroupId, status: taskStatus });
+            if (io2)
+              io2.emit("task_updated", {
+                task_group_id: taskGroupId,
+                status: taskStatus,
+              });
           }
         }
       }
 
       // Citizen notification for each step
       const notifMap = {
-        accepted: { type: "mission_accepted", title: "Doi cuu ho da nhan nhiem vu", msg: "Doi cuu ho da xac nhan va dang chuan bi xuat phat den vi tri cua ban." },
-        en_route: { type: "mission_en_route", title: "Doi cuu ho dang tren duong", msg: "Doi cuu ho dang di chuyen den vi tri cua ban, vui long cho." },
-        on_scene: { type: "mission_on_scene", title: "Doi cuu ho da den hien truong", msg: "Doi cuu ho da co mat tai hien truong, dang tien hanh cuu ho." },
-        completed: { type: "mission_completed", title: "Cuu ho hoan thanh", msg: "Doi cuu ho da hoan thanh va dong don cuu ho cua ban. Cam on ban da lien he, chuc ban binh an!" },
-        aborted: { type: "mission_aborted", title: "Nhiem vu bi huy", msg: "Nhiem vu cuu ho da bi huy. Chung toi se co gang ho tro ban som nhat." },
+        accepted: {
+          type: "mission_accepted",
+          title: "Doi cuu ho da nhan nhiem vu",
+          msg: "Doi cuu ho da xac nhan va dang chuan bi xuat phat den vi tri cua ban.",
+        },
+        en_route: {
+          type: "mission_en_route",
+          title: "Doi cuu ho dang tren duong",
+          msg: "Doi cuu ho dang di chuyen den vi tri cua ban, vui long cho.",
+        },
+        on_scene: {
+          type: "mission_on_scene",
+          title: "Doi cuu ho da den hien truong",
+          msg: "Doi cuu ho da co mat tai hien truong, dang tien hanh cuu ho.",
+        },
+        completed: {
+          type: "mission_completed",
+          title: "Cuu ho hoan thanh",
+          msg: "Doi cuu ho da hoan thanh va dong don cuu ho cua ban. Cam on ban da lien he, chuc ban binh an!",
+        },
+        aborted: {
+          type: "mission_aborted",
+          title: "Nhiem vu bi huy",
+          msg: "Nhiem vu cuu ho da bi huy. Chung toi se co gang ho tro ban som nhat.",
+        },
       };
       if (notifMap[status]) {
         await query(
@@ -228,10 +262,16 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
 
       const io = req.app.get("io");
       if (io) {
-        io.emit("mission_updated", { mission_id: parseInt(req.params.id), status });
+        io.emit("mission_updated", {
+          mission_id: parseInt(req.params.id),
+          status,
+        });
         io.emit("request_updated", {
           id: request_id,
-          status: (status === "en_route" || status === "on_scene") ? "in_progress" : undefined,
+          status:
+            status === "en_route" || status === "on_scene"
+              ? "in_progress"
+              : undefined,
           rescue_team_confirmed: status === "completed" ? true : undefined,
         });
       }
