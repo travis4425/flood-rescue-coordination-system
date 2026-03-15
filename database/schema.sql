@@ -271,7 +271,7 @@ CREATE TABLE vehicles (
     team_id INT REFERENCES rescue_teams(id),
     warehouse_id INT,                               -- kho quản lý xe này
     status VARCHAR(20) DEFAULT 'available' CHECK (status IN (
-        'available', 'in_use', 'maintenance', 'retired'
+        'available', 'in_use', 'in_transit', 'maintenance', 'retired', 'lost'
     )),
     created_at DATETIME2 DEFAULT GETDATE(),
     updated_at DATETIME2 DEFAULT GETDATE()
@@ -411,6 +411,7 @@ CREATE TABLE task_groups (
     province_id         INT REFERENCES provinces(id),
     status              VARCHAR(20) NOT NULL DEFAULT 'in_progress'
                         CHECK (status IN ('in_progress','completed','partial','cancelled')),
+    scheduled_date      DATE        NULL,
     stalled_alerted_at  DATETIME2 NULL,
     notes               NVARCHAR(MAX),
     created_at          DATETIME2 DEFAULT GETDATE(),
@@ -546,7 +547,7 @@ CREATE TABLE vehicle_dispatches (
     dispatched_by   INT NOT NULL REFERENCES users(id),   -- coordinator
     mission_note    NVARCHAR(300) NULL,
     status          VARCHAR(20) NOT NULL DEFAULT 'dispatched'
-                    CHECK (status IN ('dispatched','confirmed','returned','cancelled')),
+                    CHECK (status IN ('dispatched','confirmed','returned','cancelled','incident_pending')),
     dispatched_at   DATETIME2 DEFAULT GETDATE(),
     confirmed_at    DATETIME2 NULL,                      -- team xác nhận nhận xe
     returned_at     DATETIME2 NULL,                      -- team trả xe
@@ -615,5 +616,16 @@ ALTER TABLE relief_distributions ADD voucher_code        VARCHAR(20)  NULL;
 ALTER TABLE relief_distributions ADD warehouse_confirmed BIT          NOT NULL DEFAULT 0;
 ALTER TABLE relief_distributions ADD warehouse_confirmed_at DATETIME2 NULL;
 ALTER TABLE relief_distributions ADD warehouse_confirmed_by INT        NULL REFERENCES users(id);
+
+-- *24. VEHICLE DISPATCH — xác nhận bàn giao xe từ kho
+ALTER TABLE vehicle_dispatches ADD warehouse_confirmed    BIT          NOT NULL DEFAULT 0;
+ALTER TABLE vehicle_dispatches ADD warehouse_confirmed_at DATETIME2   NULL;
+ALTER TABLE vehicle_dispatches ADD warehouse_confirmed_by INT         NULL REFERENCES users(id);
+
+-- *25. VEHICLE DISPATCH — báo cáo sự cố xe (hỏng / mất)
+ALTER TABLE vehicle_dispatches ADD incident_type          VARCHAR(20)  NULL CHECK (incident_type IN ('damaged','lost'));
+ALTER TABLE vehicle_dispatches ADD incident_note          NVARCHAR(500) NULL;
+ALTER TABLE vehicle_dispatches ADD incident_reported_at   DATETIME2    NULL;
+ALTER TABLE vehicle_dispatches ADD incident_reported_by   INT          NULL REFERENCES users(id);
 
 GO
