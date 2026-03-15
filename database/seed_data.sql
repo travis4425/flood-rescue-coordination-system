@@ -104,52 +104,52 @@ SET IDENTITY_INSERT urgency_levels OFF;
 DECLARE @hash VARCHAR(255) = '$2a$10$OS0HPBGhR6NtXxQ/QAWmP.CzeOr947.Q04EIqjt1VrYuwIXLGKH7C';
 
 SET IDENTITY_INSERT users ON;
-INSERT INTO users (id, username, email, password_hash, full_name, phone, role, region_id, province_id) VALUES
+INSERT INTO users (id, username, email, password_hash, full_name, phone, role, province_id) VALUES
   -- Hệ thống
-  (1,  'admin',      'admin@cuuho.vn',       @hash, N'Nguyễn Văn Admin',   '0900000001', 'admin',             NULL, NULL),
-  (2,  'wm_hcm',     'wm@cuuho.vn',          @hash, N'Lê Minh Kho',        '0900000002', 'warehouse_manager', 1,    1),
+  (1,  'admin',      'admin@cuuho.vn',       @hash, N'Nguyễn Văn Admin',   '0900000001', 'admin',             NULL),
+  (2,  'wm_hcm',     'wm@cuuho.vn',          @hash, N'Lê Minh Kho',        '0900000002', 'warehouse_manager', 1),
   -- Manager (1 người quản lý chung vùng HCM)
-  (3,  'mgr_hcm',    'mgr.hcm@cuuho.vn',     @hash, N'Trần Quốc Hùng',    '0900000003', 'manager',           1,    1),
+  (3,  'mgr_hcm',    'mgr.hcm@cuuho.vn',     @hash, N'Trần Quốc Hùng',    '0900000003', 'manager',           1),
   -- Coordinators (1 per tỉnh)
-  (4,  'coord_hcm',  'coord.hcm@cuuho.vn',   @hash, N'Trần Văn Hùng',     '0900000004', 'coordinator',       1,    1),
-  (5,  'coord_bd',   'coord.bd@cuuho.vn',     @hash, N'Lý Thị Bình',       '0900000005', 'coordinator',       1,    2),
-  (6,  'coord_dn',   'coord.dn@cuuho.vn',     @hash, N'Ngô Văn Đồng',      '0900000006', 'coordinator',       1,    3),
-  (7,  'coord_la',   'coord.la@cuuho.vn',     @hash, N'Cao Thị Long',      '0900000007', 'coordinator',       1,    4),
-  (8,  'coord_tn',   'coord.tn@cuuho.vn',     @hash, N'Đinh Văn Tây',      '0900000008', 'coordinator',       1,    5),
-  (9,  'coord_brvt', 'coord.brvt@cuuho.vn',   @hash, N'Phan Thị Vũng',     '0900000009', 'coordinator',       1,    6),
-  -- Team leaders
-  (10, 'leader_hcm1','leader.hcm1@cuuho.vn', @hash, N'Trần Minh Hiếu',    '0911000001', 'rescue_team',       1,    1),
-  (11, 'leader_hcm2','leader.hcm2@cuuho.vn', @hash, N'Nguyễn Lan Anh',    '0911000002', 'rescue_team',       1,    1),
-  (12, 'leader_bd1', 'leader.bd1@cuuho.vn',   @hash, N'Phạm Văn Cường',    '0911000003', 'rescue_team',       1,    2),
-  (13, 'leader_la1', 'leader.la1@cuuho.vn',   @hash, N'Lê Thị Thu Hương',  '0911000004', 'rescue_team',       1,    4),
+  (4,  'coord_hcm',  'coord.hcm@cuuho.vn',   @hash, N'Trần Văn Hùng',     '0900000004', 'coordinator',       1),
+  (5,  'coord_bd',   'coord.bd@cuuho.vn',     @hash, N'Lý Thị Bình',       '0900000005', 'coordinator',       2),
+  (6,  'coord_dn',   'coord.dn@cuuho.vn',     @hash, N'Ngô Văn Đồng',      '0900000006', 'coordinator',       3),
+  (7,  'coord_la',   'coord.la@cuuho.vn',     @hash, N'Cao Thị Long',      '0900000007', 'coordinator',       4),
+  (8,  'coord_tn',   'coord.tn@cuuho.vn',     @hash, N'Đinh Văn Tây',      '0900000008', 'coordinator',       5),
+  (9,  'coord_brvt', 'coord.brvt@cuuho.vn',   @hash, N'Phan Thị Vũng',     '0900000009', 'coordinator',       6),
+  -- Team leaders (named by district)
+  (10, 'leader_binhthanh','leader.binhthanh@cuuho.vn', @hash, N'Trần Minh Hiếu',    '0911000001', 'rescue_team', 1),
+  (11, 'leader_q7',       'leader.q7@cuuho.vn',        @hash, N'Nguyễn Lan Anh',    '0911000002', 'rescue_team', 1),
+  (12, 'leader_thuanan',  'leader.thuanan@cuuho.vn',   @hash, N'Phạm Văn Cường',    '0911000003', 'rescue_team', 2),
+  (13, 'leader_benluc',   'leader.benluc@cuuho.vn',    @hash, N'Lê Thị Thu Hương',  '0911000004', 'rescue_team', 4),
   -- Members HCM đội 1 (6 người)
-  (14, 'mem_hcm_01', 'mhcm01@cuuho.vn',  @hash, N'Cao Thị Lan',        '0912000001', 'rescue_team', 1, 1),
-  (15, 'mem_hcm_02', 'mhcm02@cuuho.vn',  @hash, N'Đinh Văn Khoa',      '0912000002', 'rescue_team', 1, 1),
-  (22, 'mem_hcm_03', 'mhcm03@cuuho.vn',  @hash, N'Trần Văn Bảo',       '0912000009', 'rescue_team', 1, 1),
-  (23, 'mem_hcm_04', 'mhcm04@cuuho.vn',  @hash, N'Nguyễn Thị Cúc',     '0912000010', 'rescue_team', 1, 1),
-  (24, 'mem_hcm_05', 'mhcm05@cuuho.vn',  @hash, N'Lê Văn Đức',         '0912000011', 'rescue_team', 1, 1),
-  (25, 'mem_hcm_06', 'mhcm06@cuuho.vn',  @hash, N'Phạm Văn Hải',       '0912000012', 'rescue_team', 1, 1),
+  (14, 'mem_hcm_01', 'mhcm01@cuuho.vn',  @hash, N'Cao Thị Lan',        '0912000001', 'rescue_team', 1),
+  (15, 'mem_hcm_02', 'mhcm02@cuuho.vn',  @hash, N'Đinh Văn Khoa',      '0912000002', 'rescue_team', 1),
+  (22, 'mem_hcm_03', 'mhcm03@cuuho.vn',  @hash, N'Trần Văn Bảo',       '0912000009', 'rescue_team', 1),
+  (23, 'mem_hcm_04', 'mhcm04@cuuho.vn',  @hash, N'Nguyễn Thị Cúc',     '0912000010', 'rescue_team', 1),
+  (24, 'mem_hcm_05', 'mhcm05@cuuho.vn',  @hash, N'Lê Văn Đức',         '0912000011', 'rescue_team', 1),
+  (25, 'mem_hcm_06', 'mhcm06@cuuho.vn',  @hash, N'Phạm Văn Hải',       '0912000012', 'rescue_team', 1),
   -- Members HCM đội 2 (6 người)
-  (16, 'mem_hcm_07', 'mhcm07@cuuho.vn',  @hash, N'Võ Văn Nam',         '0912000003', 'rescue_team', 1, 1),
-  (17, 'mem_hcm_08', 'mhcm08@cuuho.vn',  @hash, N'Huỳnh Văn Bảo',      '0912000004', 'rescue_team', 1, 1),
-  (26, 'mem_hcm_09', 'mhcm09@cuuho.vn',  @hash, N'Võ Thị Mai',         '0912000013', 'rescue_team', 1, 1),
-  (27, 'mem_hcm_10', 'mhcm10@cuuho.vn',  @hash, N'Đặng Văn Minh',      '0912000014', 'rescue_team', 1, 1),
-  (28, 'mem_hcm_11', 'mhcm11@cuuho.vn',  @hash, N'Huỳnh Thị Ngọc',     '0912000015', 'rescue_team', 1, 1),
-  (29, 'mem_hcm_12', 'mhcm12@cuuho.vn',  @hash, N'Trịnh Văn Phong',    '0912000016', 'rescue_team', 1, 1),
+  (16, 'mem_hcm_07', 'mhcm07@cuuho.vn',  @hash, N'Võ Văn Nam',         '0912000003', 'rescue_team', 1),
+  (17, 'mem_hcm_08', 'mhcm08@cuuho.vn',  @hash, N'Huỳnh Văn Bảo',      '0912000004', 'rescue_team', 1),
+  (26, 'mem_hcm_09', 'mhcm09@cuuho.vn',  @hash, N'Võ Thị Mai',         '0912000013', 'rescue_team', 1),
+  (27, 'mem_hcm_10', 'mhcm10@cuuho.vn',  @hash, N'Đặng Văn Minh',      '0912000014', 'rescue_team', 1),
+  (28, 'mem_hcm_11', 'mhcm11@cuuho.vn',  @hash, N'Huỳnh Thị Ngọc',     '0912000015', 'rescue_team', 1),
+  (29, 'mem_hcm_12', 'mhcm12@cuuho.vn',  @hash, N'Trịnh Văn Phong',    '0912000016', 'rescue_team', 1),
   -- Members BD (6 người)
-  (18, 'mem_bd_01',  'mbd01@cuuho.vn',    @hash, N'Nguyễn Văn Hải',     '0912000005', 'rescue_team', 1, 2),
-  (19, 'mem_bd_02',  'mbd02@cuuho.vn',    @hash, N'Trần Thị Hoa',       '0912000006', 'rescue_team', 1, 2),
-  (30, 'mem_bd_03',  'mbd03@cuuho.vn',    @hash, N'Lý Văn Quang',       '0912000017', 'rescue_team', 1, 2),
-  (31, 'mem_bd_04',  'mbd04@cuuho.vn',    @hash, N'Cao Thị Ry',         '0912000018', 'rescue_team', 1, 2),
-  (32, 'mem_bd_05',  'mbd05@cuuho.vn',    @hash, N'Đinh Văn Sơn',       '0912000019', 'rescue_team', 1, 2),
-  (33, 'mem_bd_06',  'mbd06@cuuho.vn',    @hash, N'Ngô Thị Thanh',      '0912000020', 'rescue_team', 1, 2),
+  (18, 'mem_bd_01',  'mbd01@cuuho.vn',    @hash, N'Nguyễn Văn Hải',     '0912000005', 'rescue_team', 2),
+  (19, 'mem_bd_02',  'mbd02@cuuho.vn',    @hash, N'Trần Thị Hoa',       '0912000006', 'rescue_team', 2),
+  (30, 'mem_bd_03',  'mbd03@cuuho.vn',    @hash, N'Lý Văn Quang',       '0912000017', 'rescue_team', 2),
+  (31, 'mem_bd_04',  'mbd04@cuuho.vn',    @hash, N'Cao Thị Ry',         '0912000018', 'rescue_team', 2),
+  (32, 'mem_bd_05',  'mbd05@cuuho.vn',    @hash, N'Đinh Văn Sơn',       '0912000019', 'rescue_team', 2),
+  (33, 'mem_bd_06',  'mbd06@cuuho.vn',    @hash, N'Ngô Thị Thanh',      '0912000020', 'rescue_team', 2),
   -- Members LA (6 người)
-  (20, 'mem_la_01',  'mla01@cuuho.vn',    @hash, N'Lê Văn Quân',        '0912000007', 'rescue_team', 1, 4),
-  (21, 'mem_la_02',  'mla02@cuuho.vn',    @hash, N'Nguyễn Thị Trang',   '0912000008', 'rescue_team', 1, 4),
-  (34, 'mem_la_03',  'mla03@cuuho.vn',    @hash, N'Phan Văn Tùng',      '0912000021', 'rescue_team', 1, 4),
-  (35, 'mem_la_04',  'mla04@cuuho.vn',    @hash, N'Bùi Thị Uyên',       '0912000022', 'rescue_team', 1, 4),
-  (36, 'mem_la_05',  'mla05@cuuho.vn',    @hash, N'Hồ Văn Vũ',          '0912000023', 'rescue_team', 1, 4),
-  (37, 'mem_la_06',  'mla06@cuuho.vn',    @hash, N'Trần Thị Xinh',      '0912000024', 'rescue_team', 1, 4);
+  (20, 'mem_la_01',  'mla01@cuuho.vn',    @hash, N'Lê Văn Quân',        '0912000007', 'rescue_team', 4),
+  (21, 'mem_la_02',  'mla02@cuuho.vn',    @hash, N'Nguyễn Thị Trang',   '0912000008', 'rescue_team', 4),
+  (34, 'mem_la_03',  'mla03@cuuho.vn',    @hash, N'Phan Văn Tùng',      '0912000021', 'rescue_team', 4),
+  (35, 'mem_la_04',  'mla04@cuuho.vn',    @hash, N'Bùi Thị Uyên',       '0912000022', 'rescue_team', 4),
+  (36, 'mem_la_05',  'mla05@cuuho.vn',    @hash, N'Hồ Văn Vũ',          '0912000023', 'rescue_team', 4),
+  (37, 'mem_la_06',  'mla06@cuuho.vn',    @hash, N'Trần Thị Xinh',      '0912000024', 'rescue_team', 4);
 SET IDENTITY_INSERT users OFF;
 
 -- 8. COORDINATOR REGIONS
@@ -415,11 +415,11 @@ INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new
   (4,  'verify_request', 'rescue_request', 2, '{"status":"pending"}', '{"status":"verified"}','192.168.1.10'),
   (4,  'assign_team',    'rescue_request', 2, '{"assigned_team_id":null}', '{"assigned_team_id":2}', '192.168.1.10');
 
--- 22. RELIEF DISTRIBUTIONS (3)
-INSERT INTO relief_distributions (distribution_type, request_id, warehouse_id, item_id, quantity, distributed_by, notes) VALUES
-  ('issue', 1,  1, 1, 200, 2,  N'Cấp phát gạo cho vùng ngập Bình Thạnh'),
-  ('issue', 1,  1, 6,  30, 2,  N'Cấp áo phao cho đội cứu hộ'),
-  ('issue', 9,  4, 1, 500, 7,  N'Cấp gạo cho 60 hộ dân Bến Lức bị cô lập');
+-- 22. RELIEF DISTRIBUTIONS (3) — có team_id + voucher_code để demo
+INSERT INTO relief_distributions (distribution_type, request_id, team_id, warehouse_id, item_id, quantity, distributed_by, voucher_code, warehouse_confirmed, notes) VALUES
+  ('issue', 1, 1, 1, 1, 200, 2, 'VT-A1B2C3D4', 1, N'Cấp phát gạo cho vùng ngập Bình Thạnh'),
+  ('issue', 1, 2, 1, 6,  30, 2, 'VT-E5F6G7H8', 0, N'Cấp áo phao cho đội cứu hộ'),
+  ('issue', 9, 4, 4, 1, 500, 7, 'VT-I9J0K1L2', 1, N'Cấp gạo cho 60 hộ dân Bến Lức bị cô lập');
 
 -- Update citizen_confirmed
 UPDATE rescue_requests SET citizen_confirmed = 1, citizen_confirmed_at = GETDATE() WHERE id IN (1, 11);
@@ -437,9 +437,6 @@ UPDATE coordinator_regions SET current_workload = 4 WHERE user_id = 7;
 -- Requests: 12 (HCM×8, LA×4) | Missions: 3 | Logs: 8
 -- Weather: 3  | Notifications: 8 | Config: 12 | Audit: 3
 -- ============================================================
--- Xóa region_id vì không cần (tất cả đều cùng 1 vùng Miền Nam)
-UPDATE users SET region_id = NULL;
-
 PRINT N'✅ Seed data HCM scope inserted successfully';
 GO
 
@@ -456,28 +453,28 @@ DECLARE @h2 VARCHAR(255) = '$2a$10$OS0HPBGhR6NtXxQ/QAWmP.CzeOr947.Q04EIqjt1VrYuw
 -- NEW USERS: Leaders (id 38-58) + Members (id 59-142)
 SET IDENTITY_INSERT users ON;
 INSERT INTO users (id, username, email, password_hash, full_name, phone, role, province_id) VALUES
-  -- === LEADERS ===
-  (38,'leader_hcm3', 'leader.hcm3@cuuho.vn', @h2, N'Nguyễn Văn Tân',     '0913100001', 'rescue_team', 1),
-  (39,'leader_hcm4', 'leader.hcm4@cuuho.vn', @h2, N'Trần Thị Bích',      '0913100002', 'rescue_team', 1),
-  (40,'leader_hcm5', 'leader.hcm5@cuuho.vn', @h2, N'Lê Minh Đức',        '0913100003', 'rescue_team', 1),
-  (41,'leader_bd2',  'leader.bd2@cuuho.vn',  @h2, N'Phạm Văn Lộc',       '0913100004', 'rescue_team', 2),
-  (42,'leader_bd3',  'leader.bd3@cuuho.vn',  @h2, N'Võ Thị Nga',         '0913100005', 'rescue_team', 2),
-  (43,'leader_bd4',  'leader.bd4@cuuho.vn',  @h2, N'Đinh Văn Phú',       '0913100006', 'rescue_team', 2),
-  (44,'leader_dn1',  'leader.dn1@cuuho.vn',  @h2, N'Nguyễn Thị Quỳnh',  '0913100007', 'rescue_team', 3),
-  (45,'leader_dn2',  'leader.dn2@cuuho.vn',  @h2, N'Trần Văn Rô',        '0913100008', 'rescue_team', 3),
-  (46,'leader_dn3',  'leader.dn3@cuuho.vn',  @h2, N'Lê Thị Sương',       '0913100009', 'rescue_team', 3),
-  (47,'leader_dn4',  'leader.dn4@cuuho.vn',  @h2, N'Phạm Văn Thông',     '0913100010', 'rescue_team', 3),
-  (48,'leader_la2',  'leader.la2@cuuho.vn',  @h2, N'Võ Văn Uy',          '0913100011', 'rescue_team', 4),
-  (49,'leader_la3',  'leader.la3@cuuho.vn',  @h2, N'Nguyễn Thị Vân',     '0913100012', 'rescue_team', 4),
-  (50,'leader_la4',  'leader.la4@cuuho.vn',  @h2, N'Trần Văn Xuân',      '0913100013', 'rescue_team', 4),
-  (51,'leader_tn1',  'leader.tn1@cuuho.vn',  @h2, N'Lê Văn Yên',         '0913100014', 'rescue_team', 5),
-  (52,'leader_tn2',  'leader.tn2@cuuho.vn',  @h2, N'Phạm Thị Ánh',       '0913100015', 'rescue_team', 5),
-  (53,'leader_tn3',  'leader.tn3@cuuho.vn',  @h2, N'Võ Văn Bắc',         '0913100016', 'rescue_team', 5),
-  (54,'leader_tn4',  'leader.tn4@cuuho.vn',  @h2, N'Đinh Văn Cảnh',      '0913100017', 'rescue_team', 5),
-  (55,'leader_brvt1','leader.brvt1@cuuho.vn',@h2, N'Nguyễn Văn Dần',     '0913100018', 'rescue_team', 6),
-  (56,'leader_brvt2','leader.brvt2@cuuho.vn',@h2, N'Trần Thị Giang',     '0913100019', 'rescue_team', 6),
-  (57,'leader_brvt3','leader.brvt3@cuuho.vn',@h2, N'Lê Văn Hào',         '0913100020', 'rescue_team', 6),
-  (58,'leader_brvt4','leader.brvt4@cuuho.vn',@h2, N'Phạm Thị Hiền',      '0913100021', 'rescue_team', 6),
+  -- === LEADERS (named by district) ===
+  (38,'leader_q1',       'leader.q1@cuuho.vn',       @h2, N'Nguyễn Văn Tân',    '0913100001', 'rescue_team', 1),
+  (39,'leader_binhchanh','leader.binhchanh@cuuho.vn', @h2, N'Trần Thị Bích',    '0913100002', 'rescue_team', 1),
+  (40,'leader_nhabe',    'leader.nhabe@cuuho.vn',     @h2, N'Lê Minh Đức',      '0913100003', 'rescue_team', 1),
+  (41,'leader_tdm',      'leader.tdm@cuuho.vn',       @h2, N'Phạm Văn Lộc',     '0913100004', 'rescue_team', 2),
+  (42,'leader_dian',     'leader.dian@cuuho.vn',      @h2, N'Võ Thị Nga',       '0913100005', 'rescue_team', 2),
+  (43,'leader_bencat',   'leader.bencat@cuuho.vn',    @h2, N'Đinh Văn Phú',     '0913100006', 'rescue_team', 2),
+  (44,'leader_bienhoa',  'leader.bienhoa@cuuho.vn',   @h2, N'Nguyễn Thị Quỳnh','0913100007', 'rescue_team', 3),
+  (45,'leader_nhontach', 'leader.nhontach@cuuho.vn',  @h2, N'Trần Văn Rô',      '0913100008', 'rescue_team', 3),
+  (46,'leader_longthanh','leader.longthanh@cuuho.vn', @h2, N'Lê Thị Sương',     '0913100009', 'rescue_team', 3),
+  (47,'leader_bienhoa2', 'leader.bienhoa2@cuuho.vn',  @h2, N'Phạm Văn Thông',   '0913100010', 'rescue_team', 3),
+  (48,'leader_tanan',    'leader.tanan@cuuho.vn',     @h2, N'Võ Văn Uy',        '0913100011', 'rescue_team', 4),
+  (49,'leader_duchoa',   'leader.duchoa@cuuho.vn',    @h2, N'Nguyễn Thị Vân',   '0913100012', 'rescue_team', 4),
+  (50,'leader_cangiuoc', 'leader.cangiuoc@cuuho.vn',  @h2, N'Trần Văn Xuân',    '0913100013', 'rescue_team', 4),
+  (51,'leader_tayninh',  'leader.tayninh@cuuho.vn',   @h2, N'Lê Văn Yên',       '0913100014', 'rescue_team', 5),
+  (52,'leader_godau',    'leader.godau@cuuho.vn',     @h2, N'Phạm Thị Ánh',     '0913100015', 'rescue_team', 5),
+  (53,'leader_trangbang','leader.trangbang@cuuho.vn', @h2, N'Võ Văn Bắc',       '0913100016', 'rescue_team', 5),
+  (54,'leader_dmchau',   'leader.dmchau@cuuho.vn',    @h2, N'Đinh Văn Cảnh',    '0913100017', 'rescue_team', 5),
+  (55,'leader_baria',    'leader.baria@cuuho.vn',     @h2, N'Nguyễn Văn Dần',   '0913100018', 'rescue_team', 6),
+  (56,'leader_vungtau',  'leader.vungtau@cuuho.vn',   @h2, N'Trần Thị Giang',   '0913100019', 'rescue_team', 6),
+  (57,'leader_longdien', 'leader.longdien@cuuho.vn',  @h2, N'Lê Văn Hào',       '0913100020', 'rescue_team', 6),
+  (58,'leader_xuyenmoc', 'leader.xuyenmoc@cuuho.vn',  @h2, N'Phạm Thị Hiền',    '0913100021', 'rescue_team', 6),
   -- === MEMBERS: HCM-03 (team 5) ===
   (59, 'mem_hcm3_01','mhcm3_01@cuuho.vn', @h2, N'Cao Văn Khoa',     '0914100001', 'rescue_team', 1),
   (60, 'mem_hcm3_02','mhcm3_02@cuuho.vn', @h2, N'Ngô Thị Linh',     '0914100002', 'rescue_team', 1),
