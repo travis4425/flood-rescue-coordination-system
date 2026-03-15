@@ -57,7 +57,9 @@ router.post(
       // Coordinator can only create teams in their own province
       if (req.user.role === "coordinator" && req.user.province_id) {
         if (parseInt(province_id) !== req.user.province_id) {
-          return res.status(403).json({ error: "Bạn chỉ có thể tạo đội trong tỉnh của mình." });
+          return res
+            .status(403)
+            .json({ error: "Bạn chỉ có thể tạo đội trong tỉnh của mình." });
         }
       }
 
@@ -67,7 +69,9 @@ router.post(
        VALUES (@name, @code, @leader_id, @province_id, @district_id, @capacity, @specialization, @phone)`,
         {
           name,
-          code: code || `DT-${Math.random().toString(36).substring(2,6).toUpperCase()}`,
+          code:
+            code ||
+            `DT-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
           leader_id: leader_id ? parseInt(leader_id) : null,
           province_id: parseInt(province_id),
           district_id: district_id ? parseInt(district_id) : null,
@@ -76,12 +80,10 @@ router.post(
           phone,
         },
       );
-      res
-        .status(201)
-        .json({
-          id: result.recordset[0].id,
-          message: "Tạo đội cứu hộ thành công.",
-        });
+      res.status(201).json({
+        id: result.recordset[0].id,
+        message: "Tạo đội cứu hộ thành công.",
+      });
     } catch (err) {
       next(err);
     }
@@ -162,11 +164,9 @@ router.put(
       const { status } = req.body;
       const validStatuses = ["available", "on_mission", "standby", "off_duty"];
       if (!status || !validStatuses.includes(status)) {
-        return res
-          .status(400)
-          .json({
-            error: `Trạng thái không hợp lệ. Chấp nhận: ${validStatuses.join(", ")}`,
-          });
+        return res.status(400).json({
+          error: `Trạng thái không hợp lệ. Chấp nhận: ${validStatuses.join(", ")}`,
+        });
       }
       await query(
         "UPDATE rescue_teams SET status = @status, updated_at = GETDATE() WHERE id = @id",
@@ -228,7 +228,7 @@ router.get("/:id", authenticate, async (req, res, next) => {
 
     // Get members
     const members = await query(
-      `SELECT rtm.*, u.full_name, u.phone, u.email, u.avatar_url, u.role
+      `SELECT rtm.*, u.full_name, u.phone, u.email, u.role
        FROM rescue_team_members rtm
        JOIN users u ON rtm.user_id = u.id
        WHERE rtm.team_id = @teamId
@@ -260,7 +260,7 @@ router.get("/:id/members", authenticate, async (req, res, next) => {
   try {
     const result = await query(
       `SELECT rtm.id, rtm.role_in_team, rtm.joined_at,
-              u.id as user_id, u.full_name, u.phone, u.email, u.avatar_url, u.role as system_role
+              u.id as user_id, u.full_name, u.phone, u.email, u.role as system_role
        FROM rescue_team_members rtm
        JOIN users u ON rtm.user_id = u.id
        WHERE rtm.team_id = @teamId
