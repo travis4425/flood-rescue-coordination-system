@@ -28,9 +28,8 @@ router.post("/login", loginLimiter, async (req, res, next) => {
     }
 
     const result = await query(
-      `SELECT u.*, r.name as region_name, p.name as province_name
+      `SELECT u.*, p.name as province_name
        FROM users u
-       LEFT JOIN regions r ON u.region_id = r.id
        LEFT JOIN provinces p ON u.province_id = p.id
        WHERE u.username = @username AND u.is_active = 1`,
       { username },
@@ -60,7 +59,6 @@ router.post("/login", loginLimiter, async (req, res, next) => {
         id: user.id,
         username: user.username,
         role: user.role,
-        region_id: user.region_id,
         province_id: user.province_id,
       },
       process.env.JWT_SECRET,
@@ -86,11 +84,10 @@ router.post("/login", loginLimiter, async (req, res, next) => {
 router.get("/me", authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.avatar_url,
-              u.role, u.region_id, u.province_id, u.is_active, u.last_login,
-              r.name as region_name, p.name as province_name
+      `SELECT u.id, u.username, u.email, u.full_name, u.phone,
+              u.role, u.province_id, u.is_active, u.last_login,
+              p.name as province_name
        FROM users u
-       LEFT JOIN regions r ON u.region_id = r.id
        LEFT JOIN provinces p ON u.province_id = p.id
        WHERE u.id = @id`,
       { id: req.user.id },
