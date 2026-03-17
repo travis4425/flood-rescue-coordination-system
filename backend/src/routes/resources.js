@@ -541,7 +541,10 @@ router.put(
       if (!row.warehouse_confirmed)
         return res
           .status(400)
-          .json({ error: "Kho chưa xác nhận bàn giao. Vui lòng chờ kho xác nhận trước." });
+          .json({
+            error:
+              "Kho chưa xác nhận bàn giao. Vui lòng chờ kho xác nhận trước.",
+          });
 
       await query(
         `UPDATE relief_distributions SET status = 'confirmed', confirmed_at = GETDATE() WHERE id = @id`,
@@ -572,9 +575,13 @@ router.put(
         return res.status(404).json({ error: "Không tìm thấy bản ghi." });
       const row = dist.recordset[0];
       if (row.status !== "issued")
-        return res.status(400).json({ error: "Chỉ xác nhận bàn giao khi trạng thái là 'issued'." });
+        return res
+          .status(400)
+          .json({ error: "Chỉ xác nhận bàn giao khi trạng thái là 'issued'." });
       if (row.warehouse_confirmed)
-        return res.status(400).json({ error: "Phiếu này đã được xác nhận bàn giao rồi." });
+        return res
+          .status(400)
+          .json({ error: "Phiếu này đã được xác nhận bàn giao rồi." });
 
       await query(
         `UPDATE relief_distributions
@@ -588,7 +595,9 @@ router.put(
       const io = req.app.get("io");
       if (io) io.emit("distribution_warehouse_confirmed", { id });
 
-      res.json({ message: "Đã xác nhận bàn giao. Team có thể xác nhận nhận hàng." });
+      res.json({
+        message: "Đã xác nhận bàn giao. Team có thể xác nhận nhận hàng.",
+      });
     } catch (err) {
       next(err);
     }
@@ -759,7 +768,7 @@ router.get(
 router.post(
   "/vehicle-requests",
   authenticate,
-  authorize("admin", "manager", "warehouse_manager", "coordinator"),
+  authorize("admin", "coordinator"),
   async (req, res, next) => {
     try {
       const {
@@ -1074,16 +1083,24 @@ router.put(
         return res.status(404).json({ error: "Không tìm thấy bản ghi." });
       const row = vd.recordset[0];
       if (row.status !== "dispatched")
-        return res.status(400).json({ error: "Chỉ xác nhận khi xe đang ở trạng thái 'dispatched'." });
+        return res
+          .status(400)
+          .json({
+            error: "Chỉ xác nhận khi xe đang ở trạng thái 'dispatched'.",
+          });
       if (row.warehouse_confirmed)
-        return res.status(400).json({ error: "Xe đã được xác nhận bàn giao trước đó." });
+        return res
+          .status(400)
+          .json({ error: "Xe đã được xác nhận bàn giao trước đó." });
 
       await query(
         `UPDATE vehicle_dispatches SET warehouse_confirmed = 1, warehouse_confirmed_at = GETDATE(),
          warehouse_confirmed_by = @uid, updated_at = GETDATE() WHERE id = @id`,
         { id, uid: req.user.id },
       );
-      res.json({ message: "Đã xác nhận bàn giao xe. Đội cứu hộ có thể xác nhận nhận xe." });
+      res.json({
+        message: "Đã xác nhận bàn giao xe. Đội cứu hộ có thể xác nhận nhận xe.",
+      });
     } catch (err) {
       next(err);
     }
@@ -1115,7 +1132,10 @@ router.put(
       if (!row.warehouse_confirmed)
         return res
           .status(400)
-          .json({ error: "Kho chưa xác nhận bàn giao xe. Vui lòng chờ quản lý kho xác nhận." });
+          .json({
+            error:
+              "Kho chưa xác nhận bàn giao xe. Vui lòng chờ quản lý kho xác nhận.",
+          });
       if (row.status !== "dispatched")
         return res
           .status(400)
@@ -1239,7 +1259,9 @@ router.put(
       const id = parseInt(req.params.id);
       const { incident_type, incident_note } = req.body;
       if (!["damaged", "lost"].includes(incident_type))
-        return res.status(400).json({ error: "Loại sự cố phải là 'damaged' hoặc 'lost'." });
+        return res
+          .status(400)
+          .json({ error: "Loại sự cố phải là 'damaged' hoặc 'lost'." });
 
       const vd = await query(
         `SELECT vd.id, vd.status, vd.vehicle_id, rt.leader_id
@@ -1254,7 +1276,9 @@ router.put(
       if (row.leader_id !== req.user.id)
         return res.status(403).json({ error: "Bạn không phải trưởng đội." });
       if (row.status !== "confirmed")
-        return res.status(400).json({ error: "Chỉ báo sự cố khi đang sử dụng xe." });
+        return res
+          .status(400)
+          .json({ error: "Chỉ báo sự cố khi đang sử dụng xe." });
 
       // Dispatch → incident_pending, chờ kho xác nhận tình trạng thực tế
       await query(
@@ -1263,13 +1287,20 @@ router.put(
              incident_reported_at = GETDATE(), incident_reported_by = @uid,
              status = 'incident_pending', updated_at = GETDATE()
          WHERE id = @id`,
-        { id, type: incident_type, note: incident_note || null, uid: req.user.id },
+        {
+          id,
+          type: incident_type,
+          note: incident_note || null,
+          uid: req.user.id,
+        },
       );
 
       const io = req.app.get("io");
       if (io) io.emit("vehicle_incident_reported", { id, incident_type });
 
-      res.json({ message: "Đã gửi báo cáo sự cố. Kho sẽ xác nhận tình trạng thực tế." });
+      res.json({
+        message: "Đã gửi báo cáo sự cố. Kho sẽ xác nhận tình trạng thực tế.",
+      });
     } catch (err) {
       next(err);
     }
@@ -1287,7 +1318,9 @@ router.put(
       const { confirmed_type, confirmed_note } = req.body;
       // confirmed_type: 'damaged' | 'lost' | 'ok' (tìm lại được / hỏng nhẹ)
       if (!["damaged", "lost", "ok"].includes(confirmed_type))
-        return res.status(400).json({ error: "confirmed_type phải là damaged / lost / ok." });
+        return res
+          .status(400)
+          .json({ error: "confirmed_type phải là damaged / lost / ok." });
 
       const vd = await query(
         `SELECT id, status, vehicle_id, incident_type FROM vehicle_dispatches WHERE id = @id`,
@@ -1300,9 +1333,12 @@ router.put(
         return res.status(400).json({ error: "Không có sự cố cần xác nhận." });
 
       // Xác định trạng thái xe sau khi kho xác nhận
-      const vehicleStatus = confirmed_type === "lost" ? "lost"
-        : confirmed_type === "damaged" ? "maintenance"
-        : "available";
+      const vehicleStatus =
+        confirmed_type === "lost"
+          ? "lost"
+          : confirmed_type === "damaged"
+            ? "maintenance"
+            : "available";
 
       await query(
         `UPDATE vehicle_dispatches
@@ -1321,10 +1357,47 @@ router.put(
       const io = req.app.get("io");
       if (io) io.emit("vehicle_incident_confirmed", { id, confirmed_type });
 
-      const msg = confirmed_type === "lost" ? "Đã xác nhận xe mất. Coordinator sẽ được thông báo."
-        : confirmed_type === "damaged" ? "Đã xác nhận xe hỏng. Xe chuyển sang bảo trì."
-        : "Đã xác nhận xe ổn, trả về available.";
+      const msg =
+        confirmed_type === "lost"
+          ? "Đã xác nhận xe mất. Coordinator sẽ được thông báo."
+          : confirmed_type === "damaged"
+            ? "Đã xác nhận xe hỏng. Xe chuyển sang bảo trì."
+            : "Đã xác nhận xe ổn, trả về available.";
       res.json({ message: msg });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/vehicles/:id/mark-repaired — Kho xác nhận xe đã sửa xong
+router.put(
+  "/vehicles/:id/mark-repaired",
+  authenticate,
+  authorize("warehouse_manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const veh = await query(
+        "SELECT id, status FROM vehicles WHERE id = @id",
+        { id },
+      );
+      if (veh.recordset.length === 0)
+        return res.status(404).json({ error: "Không tìm thấy xe." });
+      if (veh.recordset[0].status !== "maintenance")
+        return res
+          .status(400)
+          .json({ error: "Xe không ở trạng thái bảo trì." });
+
+      await query(
+        "UPDATE vehicles SET status = 'available', updated_at = GETDATE() WHERE id = @id",
+        { id },
+      );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_repaired", { id });
+
+      res.json({ message: "Xe đã sửa xong, trả về trạng thái sẵn sàng." });
     } catch (err) {
       next(err);
     }
@@ -1762,6 +1835,163 @@ router.put(
         { id },
       );
       res.json({ message: "Đã huỷ transfer. Xe trở về tỉnh cũ." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── SUPPLY REQUESTS (Coordinator → Manager) ─────────────────────────────────
+router.get(
+  "/supply-requests",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const { user } = req;
+      let where = "";
+      const params = {};
+      if (user.role === "coordinator") {
+        where = "WHERE sr.requester_id = @uid";
+        params.uid = user.id;
+      }
+      const result = await query(
+        `SELECT sr.*, u.full_name as requester_name,
+                w.name as warehouse_name, ri.name as item_name, ri.unit,
+                rv.full_name as reviewer_name
+         FROM supply_requests sr
+         JOIN users u ON sr.requester_id = u.id
+         JOIN warehouses w ON sr.warehouse_id = w.id
+         JOIN relief_items ri ON sr.item_id = ri.id
+         LEFT JOIN users rv ON sr.reviewed_by = rv.id
+         ${where}
+         ORDER BY sr.created_at DESC`,
+        params,
+      );
+      res.json(result.recordset);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.post(
+  "/supply-requests",
+  authenticate,
+  authorize("coordinator"),
+  async (req, res, next) => {
+    try {
+      const { warehouse_id, item_id, requested_quantity, reason } = req.body;
+      if (!warehouse_id || !item_id || !requested_quantity)
+        return res.status(400).json({ error: "Thiếu thông tin bắt buộc." });
+      const result = await query(
+        `INSERT INTO supply_requests (requester_id, warehouse_id, item_id, requested_quantity, reason)
+         OUTPUT INSERTED.id
+         VALUES (@uid, @wid, @iid, @qty, @reason)`,
+        {
+          uid: req.user.id,
+          wid: parseInt(warehouse_id),
+          iid: parseInt(item_id),
+          qty: parseFloat(requested_quantity),
+          reason: reason || null,
+        },
+      );
+      const io = req.app.get("io");
+      if (io) io.emit("supply_request_created", { id: result.recordset[0].id });
+      res
+        .status(201)
+        .json({
+          id: result.recordset[0].id,
+          message: "Đã gửi yêu cầu bổ sung vật tư.",
+        });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.put(
+  "/supply-requests/:id/approve",
+  authenticate,
+  authorize("manager"),
+  async (req, res, next) => {
+    try {
+      const { review_note } = req.body;
+      const id = parseInt(req.params.id);
+
+      // Lấy thông tin yêu cầu
+      const srRes = await query(
+        `SELECT * FROM supply_requests WHERE id = @id AND status = 'pending'`,
+        { id },
+      );
+      if (srRes.recordset.length === 0)
+        return res
+          .status(404)
+          .json({ error: "Không tìm thấy yêu cầu đang chờ duyệt." });
+
+      const sr = srRes.recordset[0];
+
+      // Cập nhật status
+      await query(
+        `UPDATE supply_requests SET status = 'approved', reviewed_by = @uid,
+         review_note = @note, reviewed_at = GETDATE()
+         WHERE id = @id`,
+        { uid: req.user.id, note: review_note || null, id },
+      );
+
+      // Cộng số lượng vào relief_inventory
+      const invCheck = await query(
+        `SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid`,
+        { wid: sr.warehouse_id, iid: sr.item_id },
+      );
+      if (invCheck.recordset.length > 0) {
+        await query(
+          `UPDATE relief_inventory SET quantity = quantity + @qty, last_restocked = GETDATE(), updated_at = GETDATE()
+           WHERE warehouse_id = @wid AND item_id = @iid`,
+          { qty: sr.requested_quantity, wid: sr.warehouse_id, iid: sr.item_id },
+        );
+      } else {
+        // Chưa có dòng inventory → tạo mới
+        await query(
+          `INSERT INTO relief_inventory (warehouse_id, item_id, quantity, min_threshold)
+           VALUES (@wid, @iid, @qty, 0)`,
+          { wid: sr.warehouse_id, iid: sr.item_id, qty: sr.requested_quantity },
+        );
+      }
+
+      const io = req.app.get("io");
+      if (io) io.emit("supply_request_updated", { id, status: "approved" });
+      res.json({
+        message: `Đã duyệt. Đã cộng ${sr.requested_quantity} vào tồn kho.`,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.put(
+  "/supply-requests/:id/reject",
+  authenticate,
+  authorize("manager"),
+  async (req, res, next) => {
+    try {
+      const { review_note } = req.body;
+      if (!review_note?.trim())
+        return res.status(400).json({ error: "Cần nhập lý do từ chối." });
+      await query(
+        `UPDATE supply_requests SET status = 'rejected', reviewed_by = @uid,
+         review_note = @note, reviewed_at = GETDATE()
+         WHERE id = @id AND status = 'pending'`,
+        { uid: req.user.id, note: review_note, id: parseInt(req.params.id) },
+      );
+      const io = req.app.get("io");
+      if (io)
+        io.emit("supply_request_updated", {
+          id: parseInt(req.params.id),
+          status: "rejected",
+        });
+      res.json({ message: "Đã từ chối yêu cầu." });
     } catch (err) {
       next(err);
     }
