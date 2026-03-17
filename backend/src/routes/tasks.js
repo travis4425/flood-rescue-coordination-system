@@ -22,8 +22,11 @@ router.get("/", authenticate, async (req, res, next) => {
       where += " AND tg.province_id = @province_id";
       params.province_id = req.user.province_id;
     } else if (req.user.role === "rescue_team") {
-      // Leader only: find tasks for their team
-      where += ` AND tg.team_id IN (SELECT id FROM rescue_teams WHERE leader_id = @user_id)`;
+      // Leader: show tasks where their team is in task_group_teams
+      where += ` AND tg.id IN (
+        SELECT task_group_id FROM task_group_teams
+        WHERE team_id IN (SELECT id FROM rescue_teams WHERE leader_id = @user_id)
+      )`;
       params.user_id = req.user.id;
     }
 
@@ -44,7 +47,8 @@ router.get("/", authenticate, async (req, res, next) => {
               (SELECT COUNT(*) FROM missions m WHERE m.task_group_id = tg.id) as total_sub,
               (SELECT COUNT(*) FROM missions m WHERE m.task_group_id = tg.id AND m.status = 'completed') as completed_sub,
               (SELECT COUNT(*) FROM missions m WHERE m.task_group_id = tg.id AND m.status = 'failed') as failed_sub,
-              (SELECT COUNT(*) FROM task_incident_reports ir WHERE ir.task_group_id = tg.id AND ir.status = 'pending') as pending_reports
+              (SELECT COUNT(*) FROM task_incident_reports ir WHERE ir.task_group_id = tg.id AND ir.status = 'pending') as pending_reports,
+              (SELECT COUNT(*) - 1 FROM task_group_teams tgt WHERE tgt.task_group_id = tg.id) as extra_team_count
        FROM task_groups tg
        JOIN users u ON tg.coordinator_id = u.id
        LEFT JOIN rescue_teams rt ON tg.team_id = rt.id
@@ -142,18 +146,28 @@ router.post(
   authorize("coordinator", "manager"),
   async (req, res, next) => {
     try {
-      const { name, team_id, team_ids, request_ids, requests, notes } = req.body;
+      const { name, team_id, team_ids, request_ids, requests, notes } =
+        req.body;
 
       // Support cả single team (cũ) lẫn multi-team (mới)
-      const allTeamIds = (team_ids?.length ? team_ids : team_id ? [team_id] : []).map(Number);
+      const allTeamIds = (
+        team_ids?.length ? team_ids : team_id ? [team_id] : []
+      ).map(Number);
       // requests = [{id, team_id}], hoặc fallback từ request_ids (tất cả gán cho team đầu tiên)
       const requestList = requests?.length
-        ? requests.map(r => ({ id: parseInt(r.id), team_id: parseInt(r.team_id || allTeamIds[0]) }))
-        : (request_ids || []).map(id => ({ id: parseInt(id), team_id: allTeamIds[0] }));
+        ? requests.map((r) => ({
+            id: parseInt(r.id),
+            team_id: parseInt(r.team_id || allTeamIds[0]),
+          }))
+        : (request_ids || []).map((id) => ({
+            id: parseInt(id),
+            team_id: allTeamIds[0],
+          }));
 
       if (!name || allTeamIds.length === 0 || requestList.length === 0) {
         return res.status(400).json({
-          error: "Cần có: tên task, ít nhất 1 đội, và ít nhất 1 yêu cầu cứu hộ.",
+          error:
+            "Cần có: tên task, ít nhất 1 đội, và ít nhất 1 yêu cầu cứu hộ.",
         });
       }
 
@@ -193,24 +207,39 @@ router.post(
         await query(
           `INSERT INTO missions (request_id, team_id, status, task_group_id)
            VALUES (@req_id, @team_id, 'assigned', @task_group_id)`,
-          { req_id: item.id, team_id: item.team_id, task_group_id: taskGroupId },
+          {
+            req_id: item.id,
+            team_id: item.team_id,
+            task_group_id: taskGroupId,
+          },
         );
       }
 
-      // Set all assigned teams to on_mission
+      // Set all assigned teams to on_mission + track in task_group_teams
+      const primaryId = parseInt(req.body.team_id) || allTeamIds[0];
       for (const tid of allTeamIds) {
         await query(
           "UPDATE rescue_teams SET status = 'on_mission', updated_at = GETDATE() WHERE id = @id",
           { id: tid },
         );
+        await query(
+          `IF NOT EXISTS (SELECT 1 FROM task_group_teams WHERE task_group_id = @tgid AND team_id = @tid)
+           INSERT INTO task_group_teams (task_group_id, team_id, is_primary) VALUES (@tgid, @tid, @prim)`,
+          { tgid: taskGroupId, tid, prim: tid === primaryId ? 1 : 0 },
+        );
       }
 
       const io = req.app.get("io");
       if (io) {
-        io.emit("task_created", { task_group_id: taskGroupId, team_ids: allTeamIds });
+        io.emit("task_created", {
+          task_group_id: taskGroupId,
+          team_ids: allTeamIds,
+        });
       }
 
-      res.status(201).json({ id: taskGroupId, message: "Tạo task thành công." });
+      res
+        .status(201)
+        .json({ id: taskGroupId, message: "Tạo task thành công." });
     } catch (err) {
       next(err);
     }
@@ -303,11 +332,58 @@ router.get("/:id", authenticate, async (req, res, next) => {
       return { ...m, stalled };
     });
 
+    // Get all teams participating in this task (from task_group_teams)
+    const allTeamsRes = await query(
+      `SELECT rt.id, rt.name, rt.code, rt.leader_id,
+              u.full_name as leader_name, tgt.is_primary
+       FROM task_group_teams tgt
+       JOIN rescue_teams rt ON tgt.team_id = rt.id
+       LEFT JOIN users u ON rt.leader_id = u.id
+       WHERE tgt.task_group_id = @task_id
+       ORDER BY tgt.is_primary DESC, rt.name`,
+      { task_id: taskId },
+    );
+
     res.json({
       ...task,
       missions,
       incident_reports: reportsRes.recordset,
+      all_teams: allTeamsRes.recordset,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/tasks/:id/all-members ──────────────────────────────────────────
+// Primary leader: get all members from ALL teams in this task
+router.get("/:id/all-members", authenticate, async (req, res, next) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const result = await query(
+      `SELECT u2.user_id, u2.full_name, u2.phone, u2.team_id, u2.team_name,
+              MAX(u2.is_leader) as is_leader
+       FROM (
+         -- Leaders (always included even if not in rescue_team_members)
+         SELECT rt.leader_id as user_id, u.full_name, u.phone,
+                rt.id as team_id, rt.name as team_name, 1 as is_leader
+         FROM rescue_teams rt
+         JOIN users u ON rt.leader_id = u.id
+         WHERE rt.id IN (SELECT team_id FROM task_group_teams WHERE task_group_id = @task_id)
+         UNION ALL
+         -- Regular members
+         SELECT u.id, u.full_name, u.phone, rt.id, rt.name,
+                CASE WHEN rt.leader_id = u.id THEN 1 ELSE 0 END
+         FROM rescue_team_members tm
+         JOIN users u ON tm.user_id = u.id
+         JOIN rescue_teams rt ON tm.team_id = rt.id
+         WHERE rt.id IN (SELECT team_id FROM task_group_teams WHERE task_group_id = @task_id)
+       ) u2
+       GROUP BY u2.user_id, u2.full_name, u2.phone, u2.team_id, u2.team_name
+       ORDER BY u2.team_name, MAX(u2.is_leader) DESC, u2.full_name`,
+      { task_id: taskId },
+    );
+    res.json(result.recordset);
   } catch (err) {
     next(err);
   }
@@ -319,7 +395,9 @@ router.put("/:id/assign-member", authenticate, async (req, res, next) => {
   try {
     const { mission_id, user_id, user_ids } = req.body;
     if (!mission_id || (!user_id && (!user_ids || user_ids.length === 0))) {
-      return res.status(400).json({ error: "Cần mission_id và user_id (hoặc user_ids)." });
+      return res
+        .status(400)
+        .json({ error: "Cần mission_id và user_id (hoặc user_ids)." });
     }
 
     const missionId = parseInt(mission_id);
@@ -331,7 +409,9 @@ router.put("/:id/assign-member", authenticate, async (req, res, next) => {
       { mission_id: missionId, task_id: taskId },
     );
     if (check.recordset.length === 0) {
-      return res.status(404).json({ error: "Sub-mission không thuộc task này." });
+      return res
+        .status(404)
+        .json({ error: "Sub-mission không thuộc task này." });
     }
 
     const ids = user_ids ? user_ids.map(Number) : [parseInt(user_id)];
@@ -344,10 +424,9 @@ router.put("/:id/assign-member", authenticate, async (req, res, next) => {
     );
 
     // Sync mission_assignments junction table
-    await query(
-      "DELETE FROM mission_assignments WHERE mission_id = @mid",
-      { mid: missionId },
-    );
+    await query("DELETE FROM mission_assignments WHERE mission_id = @mid", {
+      mid: missionId,
+    });
     for (const uid of ids) {
       await query(
         `IF NOT EXISTS (SELECT 1 FROM mission_assignments WHERE mission_id=@mid AND user_id=@uid)
@@ -356,8 +435,28 @@ router.put("/:id/assign-member", authenticate, async (req, res, next) => {
       );
     }
 
-    const io = req.app.get("io");
-    if (io) io.emit("mission_assigned", { mission_id: missionId, user_ids: ids });
+    // Cập nhật request sang in_progress khi leader giao việc cho thành viên
+    const missionInfo = await query(
+      "SELECT request_id FROM missions WHERE id = @id",
+      { id: missionId },
+    );
+    if (missionInfo.recordset.length > 0) {
+      const { request_id } = missionInfo.recordset[0];
+      await query(
+        `UPDATE rescue_requests SET status = 'in_progress', updated_at = GETDATE()
+         WHERE id = @id AND status IN ('assigned', 'verified')`,
+        { id: request_id },
+      );
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("mission_assigned", { mission_id: missionId, user_ids: ids });
+        io.emit("request_updated", { id: request_id, status: "in_progress" });
+      }
+    } else {
+      const io = req.app.get("io");
+      if (io)
+        io.emit("mission_assigned", { mission_id: missionId, user_ids: ids });
+    }
 
     res.json({ message: "Đã giao nhiệm vụ cho thành viên." });
   } catch (err) {
@@ -513,10 +612,15 @@ router.post(
         );
       }
 
-      // Set support team to on_mission
+      // Set support team to on_mission + track in task_group_teams
       await query(
         "UPDATE rescue_teams SET status = 'on_mission', updated_at = GETDATE() WHERE id = @id",
         { id: parseInt(team_id) },
+      );
+      await query(
+        `IF NOT EXISTS (SELECT 1 FROM task_group_teams WHERE task_group_id = @tgid AND team_id = @tid)
+         INSERT INTO task_group_teams (task_group_id, team_id, is_primary) VALUES (@tgid, @tid, 0)`,
+        { tgid: taskId, tid: parseInt(team_id) },
       );
 
       // Log support dispatch in task_incident_reports or as a note
@@ -733,7 +837,9 @@ router.put(
         { rId: parseInt(req.params.reportId), tId: parseInt(req.params.id) },
       );
       res.json({ message: "Đã hoàn tác báo cáo." });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
@@ -751,7 +857,9 @@ router.put(
         { ec: estimated_completion || null, id: parseInt(req.params.id) },
       );
       res.json({ message: "Đã cập nhật dự kiến hoàn thành." });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
@@ -769,9 +877,12 @@ router.put(
         { sd: scheduled_date || null, id: parseInt(req.params.id) },
       );
       const io = req.app.get("io");
-      if (io) io.emit("task_updated", { task_group_id: parseInt(req.params.id) });
+      if (io)
+        io.emit("task_updated", { task_group_id: parseInt(req.params.id) });
       res.json({ message: "Đã cập nhật ngày lên lịch." });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
