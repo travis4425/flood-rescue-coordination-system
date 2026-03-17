@@ -13,6 +13,8 @@ const dbConfig = {
     enableArithAbort: true,
   },
   pool: { max: 20, min: 5, idleTimeoutMillis: 30000 },
+  requestTimeout: 30000,
+  connectionTimeout: 30000,
 };
 
 let pool = null;
