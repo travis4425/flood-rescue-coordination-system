@@ -79,6 +79,10 @@ router.post(
         return res.status(400).json({ error: "Vui lòng cung cấp vị trí GPS." });
       }
 
+      if (citizen_phone && !/^(0[35789])[0-9]{8}$/.test(citizen_phone.trim())) {
+        return res.status(400).json({ error: "Số điện thoại không hợp lệ." });
+      }
+
       const trackingCode = generateTrackingCode();
 
       // Auto-detect district/province
@@ -411,7 +415,8 @@ router.put("/track/:trackingCode/rescued-by-other", async (req, res, next) => {
 
       return res.json({
         confirmed: true,
-        message: "Cảm ơn bạn đã xác nhận. Yêu cầu đã được đóng. Chúc bạn bình an!",
+        message:
+          "Cảm ơn bạn đã xác nhận. Yêu cầu đã được đóng. Chúc bạn bình an!",
       });
     }
 
@@ -460,6 +465,10 @@ router.put("/track/:trackingCode/update", async (req, res, next) => {
       victim_count,
       flood_severity,
     } = req.body;
+
+    if (citizen_phone && !/^(0[35789])[0-9]{8}$/.test(citizen_phone.trim())) {
+      return res.status(400).json({ error: "Số điện thoại không hợp lệ." });
+    }
 
     await query(
       `UPDATE rescue_requests SET
@@ -560,12 +569,6 @@ router.get("/", authenticate, async (req, res, next) => {
       where += ` AND (rr.coordinator_id = @user_id OR rr.province_id IN 
         (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id))`;
       params.user_id = req.user.id;
-    } else if (req.user.role === "manager") {
-      if (req.user.region_id) {
-        where += " AND rr.province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)";
-        params.region_id = req.user.region_id;
-      }
-      // If no region_id set → manager sees all requests
     } else if (req.user.role === "rescue_team") {
       where += ` AND rr.assigned_team_id IN 
         (SELECT team_id FROM rescue_team_members WHERE user_id = @user_id
@@ -1021,9 +1024,14 @@ router.put(
         return res.status(404).json({ error: "Không tìm thấy yêu cầu." });
       }
 
-      const { rescue_team_confirmed, status, tracking_code, coordinator_id } = current.recordset[0];
+      const { rescue_team_confirmed, status, tracking_code, coordinator_id } =
+        current.recordset[0];
       if (!rescue_team_confirmed) {
-        return res.status(400).json({ error: "Đội cứu hộ chưa xác nhận hoàn thành. Chưa thể đóng đơn." });
+        return res
+          .status(400)
+          .json({
+            error: "Đội cứu hộ chưa xác nhận hoàn thành. Chưa thể đóng đơn.",
+          });
       }
       if (status === "completed") {
         return res.status(400).json({ error: "Đơn này đã được đóng." });
@@ -1078,10 +1086,6 @@ router.get("/stats/overview", authenticate, async (req, res, next) => {
       regionFilter =
         "AND province_id IN (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id)";
       params.user_id = req.user.id;
-    } else if (req.user.role === "manager") {
-      regionFilter =
-        "AND province_id IN (SELECT id FROM provinces WHERE region_id = @region_id)";
-      params.region_id = req.user.region_id;
     }
 
     const stats = await query(
