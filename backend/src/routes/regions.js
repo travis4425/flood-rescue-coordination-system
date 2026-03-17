@@ -334,6 +334,24 @@ router.get("/weather-forecast/:provinceId", async (req, res, next) => {
   }
 });
 
+// GET /api/regions/weather-by-coords?lat=&lon= - Thời tiết theo tọa độ GPS
+router.get("/weather-by-coords", async (req, res, next) => {
+  try {
+    if (!weatherService.isConfigured()) {
+      return res.status(503).json({ error: "Weather API chưa cấu hình" });
+    }
+    const lat = parseFloat(req.query.lat);
+    const lon = parseFloat(req.query.lon);
+    if (isNaN(lat) || isNaN(lon)) {
+      return res.status(400).json({ error: "Thiếu tọa độ lat/lon" });
+    }
+    const weather = await weatherService.getCurrentWeather(lat, lon);
+    res.json({ ...weather, icon_url: weatherService.getIconUrl(weather.weather_icon) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/regions/weather-alerts/auto-sync - Tự động lấy dữ liệu thời tiết và tạo cảnh báo
 // Chỉ Manager/Admin mới được gọi
 router.post(
@@ -359,13 +377,10 @@ router.post(
           `SELECT id, name, latitude, longitude FROM provinces WHERE id IN (${idList}) AND latitude IS NOT NULL`,
         );
       } else {
-        // Mặc định: lấy tỉnh theo region của manager đang đăng nhập (hoặc tất cả nếu admin)
-        const regionFilter = req.user.role === 'manager' && req.user.region_id
-          ? `AND region_id = ${parseInt(req.user.region_id)}`
-          : '';
+        // Lấy tất cả tỉnh (chỉ 1 vùng Miền Nam nên không cần lọc theo region)
         provincesResult = await query(
           `SELECT id, name, latitude, longitude FROM provinces
-         WHERE latitude IS NOT NULL ${regionFilter}
+         WHERE latitude IS NOT NULL
          ORDER BY id`,
         );
       }
