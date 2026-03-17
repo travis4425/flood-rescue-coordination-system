@@ -11,11 +11,7 @@ router.get("/overview", authenticate, async (req, res, next) => {
     const inputs = {};
 
     // Role-based filtering
-    if (req.user.role === "manager" && req.user.region_id) {
-      where +=
-        " AND rr.province_id IN (SELECT id FROM provinces WHERE region_id = @regionId)";
-      inputs.regionId = req.user.region_id;
-    } else if (req.user.role === "coordinator" && req.user.province_id) {
+    if (req.user.role === "coordinator" && req.user.province_id) {
       where += " AND rr.province_id = @provinceId";
       inputs.provinceId = req.user.province_id;
     }
@@ -94,61 +90,6 @@ router.get("/overview", authenticate, async (req, res, next) => {
   }
 });
 
-// GET /api/dashboard/response-time - Avg response time analytics
-router.get(
-  "/response-time",
-  authenticate,
-  authorize("admin", "manager"),
-  async (req, res, next) => {
-    try {
-      const { province_id, days = 30 } = req.query;
-      let where =
-        "WHERE rr.status = 'completed' AND rr.completed_at IS NOT NULL AND rr.created_at >= DATEADD(DAY, -@days, GETDATE())";
-      const inputs = { days: parseInt(days) };
-
-      if (province_id) {
-        where += " AND rr.province_id = @provinceId";
-        inputs.provinceId = parseInt(province_id);
-      }
-
-      const result = await query(
-        `
-      SELECT 
-        CAST(rr.created_at AS DATE) as date,
-        COUNT(*) as completed_count,
-        AVG(DATEDIFF(MINUTE, rr.created_at, rr.completed_at)) as avg_response_minutes,
-        MIN(DATEDIFF(MINUTE, rr.created_at, rr.completed_at)) as min_response_minutes,
-        MAX(DATEDIFF(MINUTE, rr.created_at, rr.completed_at)) as max_response_minutes,
-        AVG(DATEDIFF(MINUTE, rr.created_at, rr.verified_at)) as avg_verify_minutes,
-        AVG(DATEDIFF(MINUTE, rr.verified_at, rr.assigned_at)) as avg_assign_minutes
-      FROM rescue_requests rr
-      ${where}
-      GROUP BY CAST(rr.created_at AS DATE)
-      ORDER BY date DESC
-    `,
-        inputs,
-      );
-
-      // Overall averages
-      const overall = await query(
-        `
-      SELECT 
-        AVG(DATEDIFF(MINUTE, rr.created_at, rr.completed_at)) as avg_total,
-        AVG(DATEDIFF(MINUTE, rr.created_at, rr.verified_at)) as avg_verify,
-        AVG(DATEDIFF(MINUTE, rr.verified_at, rr.assigned_at)) as avg_assign,
-        AVG(DATEDIFF(MINUTE, rr.assigned_at, rr.completed_at)) as avg_rescue
-      FROM rescue_requests rr
-      ${where}
-    `,
-        inputs,
-      );
-
-      res.json({ daily: result.recordset, overall: overall.recordset[0] });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
 
 // GET /api/dashboard/heatmap - Incident heatmap data
 router.get("/heatmap", authenticate, async (req, res, next) => {
