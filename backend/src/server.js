@@ -2,10 +2,11 @@ require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-const rateLimit = require("express-rate-limit");
+const cors = require("cors"); //Cho phép browser gọi API từ domain khác (React dev server ở port 5173, backend ở 5000)
+// CORS = Cross Origin Resource Sharing
+const helmet = require("helmet"); //Tự động set 15+ HTTP security headers (X-Frame-Options, Content-Security-Policy, v.v.) — ngăn clickjacking, MIME sniffing, v.v.
+const morgan = require("morgan"); //HTTP request logger — ghi mọi request ra log
+const rateLimit = require("express-rate-limit"); //Giới hạn số request theo IP để chống DDoS/brute force
 const path = require("path");
 
 const logger = require("./config/logger");
@@ -44,6 +45,8 @@ app.set("io", io);
 
 // Security
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+// crossOriginResourcePolicy: "cross-origin" cho phép browser load ảnh từ /uploads/ khi frontend ở domain khác.
+// Nếu không có option này, helmet mặc định block cross-origin resource loading.
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN || "http://localhost:5173",
@@ -51,14 +54,17 @@ app.use(
   }),
 );
 
-// Rate limiting
-const generalLimiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX) || 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Quá nhiều yêu cầu, vui lòng thử lại sau." },
-});
+// Rate limiting — tắt hoàn toàn trong development
+const generalLimiter =
+  process.env.NODE_ENV === "development"
+    ? (req, res, next) => next()
+    : rateLimit({
+        windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+        max: parseInt(process.env.RATE_LIMIT_MAX) || 200,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { error: "Quá nhiều yêu cầu, vui lòng thử lại sau." },
+      });
 
 // Separate, strict limiter CHỈ cho POST /api/auth/login
 const loginLimiter = rateLimit({
