@@ -628,4 +628,22 @@ ALTER TABLE vehicle_dispatches ADD incident_note          NVARCHAR(500) NULL;
 ALTER TABLE vehicle_dispatches ADD incident_reported_at   DATETIME2    NULL;
 ALTER TABLE vehicle_dispatches ADD incident_reported_by   INT          NULL REFERENCES users(id);
 
+-- *26. DISTRIBUTION BATCHES — 1 phiếu cấp phát nhiều vật tư cho 1 đội
+CREATE TABLE distribution_batches (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    voucher_code    VARCHAR(20)   NOT NULL UNIQUE,
+    team_id         INT           NOT NULL REFERENCES rescue_teams(id),
+    warehouse_id    INT           NOT NULL REFERENCES warehouses(id),
+    distributed_by  INT           NOT NULL REFERENCES users(id),
+    notes           NVARCHAR(500),
+    status          VARCHAR(20)   NOT NULL DEFAULT 'issued'
+                        CHECK (status IN ('issued','confirmed','return_requested','returned')),
+    created_at      DATETIME2     DEFAULT GETDATE()
+);
+CREATE INDEX idx_dbatch_team    ON distribution_batches(team_id);
+CREATE INDEX idx_dbatch_created ON distribution_batches(created_at DESC);
+
+ALTER TABLE relief_distributions ADD batch_id INT NULL REFERENCES distribution_batches(id);
+CREATE INDEX idx_dist_batch ON relief_distributions(batch_id);
+
 GO
