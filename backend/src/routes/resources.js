@@ -416,13 +416,15 @@ router.get(
         `SELECT rd.*, ri.name as item_name, ri.unit as item_unit, ri.category,
                 w.name as warehouse_name, u.full_name as distributed_by_name,
                 rt.name as team_name,
-                rcb.full_name as return_confirmed_by_name
+                rcb.full_name as return_confirmed_by_name,
+                db.voucher_code as batch_voucher
          FROM relief_distributions rd
          JOIN relief_items ri    ON rd.item_id = ri.id
          JOIN warehouses w       ON rd.warehouse_id = w.id
          JOIN users u            ON rd.distributed_by = u.id
-         LEFT JOIN rescue_teams rt  ON rd.team_id = rt.id
-         LEFT JOIN users rcb        ON rd.return_confirmed_by = rcb.id
+         LEFT JOIN rescue_teams rt        ON rd.team_id = rt.id
+         LEFT JOIN users rcb              ON rd.return_confirmed_by = rcb.id
+         LEFT JOIN distribution_batches db ON rd.batch_id = db.id
          ${where}
          ORDER BY rd.created_at DESC`,
         params,
@@ -505,6 +507,97 @@ router.post(
         id: result.recordset[0].id,
         voucher_code: voucher,
         message: "Cấp phát thành công. Tồn kho đã trừ.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /api/resources/distributions/batch — Cấp phát nhiều vật tư 1 lần (1 phiếu chung)
+router.post(
+  "/distributions/batch",
+  authenticate,
+  authorize("manager", "warehouse_manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const { team_id, warehouse_id, notes, items } = req.body;
+      if (!team_id || !warehouse_id || !Array.isArray(items) || items.length === 0)
+        return res.status(400).json({ error: "Thiếu thông tin: team_id, warehouse_id, items." });
+
+      // Coordinator chỉ được xuất từ kho tỉnh mình
+      if (req.user.role === "coordinator") {
+        const allowed = await query(
+          `SELECT 1 FROM coordinator_regions cr
+           JOIN warehouses w ON w.province_id = cr.province_id
+           WHERE cr.user_id = @uid AND w.id = @wid`,
+          { uid: req.user.id, wid: parseInt(warehouse_id) },
+        );
+        if (!allowed.recordset.length)
+          return res.status(403).json({ error: "Bạn chỉ được xuất từ kho trong tỉnh của mình." });
+      }
+
+      // Kiểm tra tồn kho đủ cho tất cả items trước khi trừ
+      for (const item of items) {
+        const inv = await query(
+          "SELECT quantity FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid",
+          { wid: parseInt(warehouse_id), iid: parseInt(item.item_id) },
+        );
+        if (!inv.recordset.length)
+          return res.status(400).json({ error: `Kho không có vật phẩm ID ${item.item_id}.` });
+        if (inv.recordset[0].quantity < parseFloat(item.quantity))
+          return res.status(400).json({
+            error: `Tồn kho không đủ cho vật phẩm ID ${item.item_id}. Hiện có: ${inv.recordset[0].quantity}.`,
+          });
+      }
+
+      // Tạo batch
+      const voucher = genVoucherCode();
+      const batchResult = await query(
+        `INSERT INTO distribution_batches (voucher_code, team_id, warehouse_id, distributed_by, notes)
+         OUTPUT INSERTED.id
+         VALUES (@voucher, @team_id, @warehouse_id, @user_id, @notes)`,
+        {
+          voucher,
+          team_id: parseInt(team_id),
+          warehouse_id: parseInt(warehouse_id),
+          user_id: req.user.id,
+          notes: notes || null,
+        },
+      );
+      const batchId = batchResult.recordset[0].id;
+
+      // Trừ kho + tạo từng dòng distribution
+      for (const item of items) {
+        const qty = parseFloat(item.quantity);
+        await query(
+          "UPDATE relief_inventory SET quantity = quantity - @qty, updated_at = GETDATE() WHERE warehouse_id = @wid AND item_id = @iid",
+          { qty, wid: parseInt(warehouse_id), iid: parseInt(item.item_id) },
+        );
+        await query(
+          `INSERT INTO relief_distributions
+             (distribution_type, team_id, warehouse_id, item_id, quantity, distributed_by, notes, status, voucher_code, batch_id)
+           VALUES ('issue', @team_id, @warehouse_id, @item_id, @qty, @user_id, @notes, 'issued', @voucher, @batch_id)`,
+          {
+            team_id: parseInt(team_id),
+            warehouse_id: parseInt(warehouse_id),
+            item_id: parseInt(item.item_id),
+            qty,
+            user_id: req.user.id,
+            notes: notes || null,
+            voucher,
+            batch_id: batchId,
+          },
+        );
+      }
+
+      const io = req.app.get("io");
+      if (io) io.emit("distribution_new", { batch_id: batchId, team_id: parseInt(team_id) });
+
+      res.status(201).json({
+        batch_id: batchId,
+        voucher_code: voucher,
+        message: `Cấp phát ${items.length} loại vật tư thành công.`,
       });
     } catch (err) {
       next(err);
