@@ -11,9 +11,13 @@ router.get("/overview", authenticate, async (req, res, next) => {
     const inputs = {};
 
     // Role-based filtering
-    if (req.user.role === "coordinator" && req.user.province_id) {
-      where += " AND rr.province_id = @provinceId";
-      inputs.provinceId = req.user.province_id;
+    if (req.user.role === "coordinator") {
+      where += ` AND (
+        rr.province_id = (SELECT province_id FROM users WHERE id = @coordId)
+        OR rr.province_id IN (SELECT province_id FROM coordinator_regions WHERE user_id = @coordId)
+        OR rr.province_id IN (SELECT province_id FROM warehouses WHERE coordinator_id = @coordId)
+      )`;
+      inputs.coordId = req.user.id;
     }
 
     if (province_id) {
@@ -300,30 +304,47 @@ router.get("/team-stats", authenticate, async (req, res, next) => {
 // GET /api/dashboard/resource-overview - Resource summary for dashboard
 router.get("/resource-overview", authenticate, async (req, res, next) => {
   try {
+    const isCoord = req.user.role === "coordinator";
+    const coordFilter = isCoord
+      ? `AND province_id IN (
+           SELECT province_id FROM users WHERE id = @cid
+           UNION SELECT province_id FROM coordinator_regions WHERE user_id = @cid
+           UNION SELECT province_id FROM warehouses WHERE coordinator_id = @cid
+         )`
+      : "";
+    const coordParams = isCoord ? { cid: req.user.id } : {};
+
     const vehicles = await query(`
-      SELECT 
+      SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available,
         SUM(CASE WHEN status = 'in_use' THEN 1 ELSE 0 END) as in_use,
         SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) as maintenance
-      FROM vehicles
-    `);
+      FROM vehicles WHERE 1=1 ${coordFilter}
+    `, coordParams);
 
     const inventory = await query(`
-      SELECT 
+      SELECT
         COUNT(*) as total_items,
         SUM(CASE WHEN ri.quantity <= ri.min_threshold THEN 1 ELSE 0 END) as low_stock_count,
         SUM(ri.quantity) as total_quantity
       FROM relief_inventory ri
-    `);
+      JOIN warehouses w ON ri.warehouse_id = w.id
+      WHERE 1=1 ${coordFilter.replace(/province_id/g, 'w.province_id')}
+    `, coordParams);
 
     const warehouses = await query(`
-      SELECT COUNT(*) as total FROM warehouses WHERE status = 'active'
-    `);
+      SELECT COUNT(*) as total FROM warehouses WHERE status = 'active' ${coordFilter}
+    `, coordParams);
 
     const pendingVehicleRequests = await query(`
       SELECT COUNT(*) as count FROM vehicle_requests WHERE status = 'pending'
-    `);
+      ${isCoord ? `AND province_id IN (
+        SELECT province_id FROM users WHERE id = @cid
+        UNION SELECT province_id FROM coordinator_regions WHERE user_id = @cid
+        UNION SELECT province_id FROM warehouses WHERE coordinator_id = @cid
+      )` : ""}
+    `, coordParams);
 
     res.json({
       vehicles: vehicles.recordset[0],
