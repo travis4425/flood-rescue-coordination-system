@@ -266,12 +266,17 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
           mission_id: parseInt(req.params.id),
           status,
         });
+        const requestStatus =
+          status === "en_route" || status === "on_scene"
+            ? "in_progress"
+            : status === "completed"
+            ? "completed"
+            : status === "aborted" || status === "failed"
+            ? "cancelled"
+            : undefined;
         io.emit("request_updated", {
           id: request_id,
-          status:
-            status === "en_route" || status === "on_scene"
-              ? "in_progress"
-              : undefined,
+          ...(requestStatus && { status: requestStatus }),
           rescue_team_confirmed: status === "completed" ? true : undefined,
         });
       }
