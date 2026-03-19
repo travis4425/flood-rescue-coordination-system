@@ -216,7 +216,7 @@ router.post(
       }
 
       // Set all assigned teams to on_mission + track in task_group_teams
-      const primaryId = parseInt(req.body.team_id) || allTeamIds[0];
+      const primaryId = (req.body.team_id ? parseInt(req.body.team_id) : null) || allTeamIds[0];
       for (const tid of allTeamIds) {
         await query(
           "UPDATE rescue_teams SET status = 'on_mission', updated_at = GETDATE() WHERE id = @id",
