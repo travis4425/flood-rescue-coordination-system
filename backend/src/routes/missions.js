@@ -13,7 +13,15 @@ router.get("/", authenticate, async (req, res, next) => {
     let where = "WHERE 1=1";
     const params = {};
 
-    if (req.user.role === "rescue_team") {
+    if (req.user.role === "coordinator") {
+      where += ` AND (
+        rr.coordinator_id = @user_id
+        OR rr.province_id = (SELECT province_id FROM users WHERE id = @user_id)
+        OR rr.province_id IN (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id)
+        OR rr.province_id IN (SELECT province_id FROM warehouses WHERE coordinator_id = @user_id)
+      )`;
+      params.user_id = req.user.id;
+    } else if (req.user.role === "rescue_team") {
       // Check if user is a team leader
       const leaderCheck = await query(
         "SELECT id FROM rescue_teams WHERE leader_id = @uid",
