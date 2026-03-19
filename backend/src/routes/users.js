@@ -16,9 +16,9 @@ router.get(
       let where = "WHERE 1=1";
       const params = {};
 
-      if (req.user.role === "manager") {
-        where += " AND u.region_id = @region_id";
-        params.region_id = req.user.region_id;
+      if (req.user.role === "manager" && req.user.province_id) {
+        where += " AND u.province_id = @province_id";
+        params.province_id = req.user.province_id;
       }
       if (role) {
         where += " AND u.role = @role";
@@ -39,11 +39,10 @@ router.get(
         params,
       );
       const result = await query(
-        `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.role, u.region_id, u.province_id,
+        `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.role, u.province_id,
               u.is_active, u.last_login, u.created_at,
-              r.name as region_name, p.name as province_name
+              p.name as province_name
        FROM users u
-       LEFT JOIN regions r ON u.region_id = r.id
        LEFT JOIN provinces p ON u.province_id = p.id
        ${where}
        ORDER BY u.created_at DESC
@@ -78,7 +77,6 @@ router.post(
         full_name,
         phone,
         role,
-        region_id,
         province_id,
       } = req.body;
       if (!username || !email || !password || !full_name || !role) {
@@ -86,8 +84,8 @@ router.post(
       }
       const hash = await bcrypt.hash(password, 10);
       const result = await query(
-        `INSERT INTO users (username, email, password_hash, full_name, phone, role, region_id, province_id)
-       OUTPUT INSERTED.id VALUES (@username, @email, @hash, @full_name, @phone, @role, @region_id, @province_id)`,
+        `INSERT INTO users (username, email, password_hash, full_name, phone, role, province_id)
+       OUTPUT INSERTED.id VALUES (@username, @email, @hash, @full_name, @phone, @role, @province_id)`,
         {
           username,
           email,
@@ -95,40 +93,41 @@ router.post(
           full_name,
           phone,
           role,
-          region_id: region_id ? parseInt(region_id) : null,
           province_id: province_id ? parseInt(province_id) : null,
         },
       );
       const newUserId = result.recordset[0].id;
 
       // Tự động tạo coordinator_regions nếu role là coordinator và có province_id
-      if (role === 'coordinator' && province_id) {
+      if (role === "coordinator" && province_id) {
         await query(
           `INSERT INTO coordinator_regions (user_id, province_id, max_workload, current_workload)
            VALUES (@user_id, @province_id, 20, 0)`,
-          { user_id: newUserId, province_id: parseInt(province_id) }
+          { user_id: newUserId, province_id: parseInt(province_id) },
         );
       }
 
       // Tự động xếp rescue_team vào đội ít thành viên nhất trong cùng tỉnh
-      if (role === 'rescue_team' && province_id) {
+      if (role === "rescue_team" && province_id) {
         const teamResult = await query(
           `SELECT TOP 1 rt.id
            FROM rescue_teams rt
            WHERE rt.province_id = @province_id AND rt.status != 'off_duty'
            ORDER BY (SELECT COUNT(*) FROM rescue_team_members WHERE team_id = rt.id) ASC`,
-          { province_id: parseInt(province_id) }
+          { province_id: parseInt(province_id) },
         );
         if (teamResult.recordset.length > 0) {
           const teamId = teamResult.recordset[0].id;
           await query(
             `INSERT INTO rescue_team_members (team_id, user_id, role_in_team) VALUES (@teamId, @userId, 'member')`,
-            { teamId, userId: newUserId }
+            { teamId, userId: newUserId },
           );
         }
       }
 
-      res.status(201).json({ id: newUserId, message: "Tạo tài khoản thành công." });
+      res
+        .status(201)
+        .json({ id: newUserId, message: "Tạo tài khoản thành công." });
     } catch (err) {
       if (err.message?.includes("UNIQUE"))
         return res
@@ -146,8 +145,7 @@ router.put(
   authorize("admin", "manager"),
   async (req, res, next) => {
     try {
-      const { full_name, phone, role, region_id, province_id, is_active } =
-        req.body;
+      const { full_name, phone, role, province_id, is_active } = req.body;
       let setClause = "updated_at = GETDATE()";
       const params = { id: parseInt(req.params.id) };
       if (full_name) {
@@ -161,10 +159,6 @@ router.put(
       if (role) {
         setClause += ", role = @role";
         params.role = role;
-      }
-      if (region_id !== undefined) {
-        setClause += ", region_id = @region_id";
-        params.region_id = region_id ? parseInt(region_id) : null;
       }
       if (province_id !== undefined) {
         setClause += ", province_id = @province_id";
@@ -235,11 +229,10 @@ router.get(
   async (req, res, next) => {
     try {
       const result = await query(
-        `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.role, 
-              u.region_id, u.province_id, u.is_active, u.last_login, u.created_at,
-              r.name as region_name, p.name as province_name
+        `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.role,
+              u.province_id, u.is_active, u.last_login, u.created_at,
+              p.name as province_name
        FROM users u
-       LEFT JOIN regions r ON u.region_id = r.id
        LEFT JOIN provinces p ON u.province_id = p.id
        WHERE u.id = @id`,
         { id: parseInt(req.params.id) },
