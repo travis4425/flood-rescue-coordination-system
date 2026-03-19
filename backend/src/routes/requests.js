@@ -605,12 +605,13 @@ router.get("/", authenticate, async (req, res, next) => {
     const total = countResult.recordset[0].total;
 
     const result = await query(
-      `SELECT rr.*, 
+      `SELECT rr.*,
               it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name,
               p.name as province_name, d.name as district_name,
-              u.full_name as coordinator_name
+              u.full_name as coordinator_name,
+              (SELECT COUNT(*) FROM rescue_request_images WHERE request_id = rr.id) as image_count
        FROM rescue_requests rr
        LEFT JOIN incident_types it ON rr.incident_type_id = it.id
        LEFT JOIN urgency_levels ul ON rr.urgency_level_id = ul.id
