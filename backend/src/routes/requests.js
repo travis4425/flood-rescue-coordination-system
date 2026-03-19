@@ -85,71 +85,39 @@ router.post(
 
       const trackingCode = generateTrackingCode();
 
-      // Auto-detect district/province
-      // Priority: 1) geo names from frontend (Nominatim called in browser), 2) server-side Nominatim fallback
+      // Auto-detect district/province — luôn dùng tọa độ để tránh sai khi GPS máy khác với pin bản đồ
       let district_id = null;
       let province_id = null;
       let geo_province_name = req.body.geo_province_name || null;
       let geo_district_name = req.body.geo_district_name || null;
+      const lat = parseFloat(latitude);
+      const lng = parseFloat(longitude);
 
-      // If frontend didn't send geo names, call Nominatim server-side as fallback
-      if (!geo_province_name) {
-        const geoData = await reverseGeocode(
-          parseFloat(latitude),
-          parseFloat(longitude),
-        );
-        if (geoData?.address) {
-          const addr = geoData.address;
-          const provinceName = addr.state || addr.city || addr.province;
-          const districtRaw = addr.county || addr.city_district || addr.suburb;
-          const districtName = districtRaw
-            ? districtRaw
-                .replace(/^(Huyện|Quận|Thị xã|Thành phố|TX\.?)\s+/i, "")
-                .trim()
-            : null;
-          geo_province_name = provinceName || null;
-          geo_district_name = districtName || null;
-        }
-      }
-
-      // Match geo names to DB IDs
-      if (geo_province_name) {
-        const provResult = await query(
-          `SELECT TOP 1 id FROM provinces WHERE name LIKE @name`,
-          { name: `%${geo_province_name}%` },
-        );
-        province_id = provResult.recordset[0]?.id || null;
-
-        if (province_id && geo_district_name) {
-          const distResult = await query(
-            `SELECT TOP 1 id FROM districts WHERE province_id = @province_id AND name LIKE @name`,
-            { province_id, name: `%${geo_district_name}%` },
-          );
-          district_id = distResult.recordset[0]?.id || null;
-        }
-      }
-
-      // Fallback to nearest-center if Nominatim failed or no match found
-      if (!province_id) {
-        const geoResult = await query(
-          `SELECT TOP 1 d.id as district_id, d.province_id
+      // Ưu tiên 1: tìm quận/huyện gần nhất theo tọa độ pin
+      const geoResult = await query(
+        `SELECT TOP 1 d.id as district_id, d.province_id
          FROM districts d
          WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
          ORDER BY ABS(d.latitude - @lat) + ABS(d.longitude - @lng)`,
-          { lat: parseFloat(latitude), lng: parseFloat(longitude) },
-        );
-        district_id = geoResult.recordset[0]?.district_id || null;
-        province_id = geoResult.recordset[0]?.province_id || null;
-      }
+        { lat, lng },
+      );
+      district_id = geoResult.recordset[0]?.district_id || null;
+      province_id = geoResult.recordset[0]?.province_id || null;
 
+      // Ưu tiên 2: nếu districts không có tọa độ, dùng province gần nhất
       if (!province_id) {
         const provResult = await query(
           `SELECT TOP 1 id as province_id FROM provinces
-         WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-         ORDER BY ABS(latitude - @lat) + ABS(longitude - @lng)`,
-          { lat: parseFloat(latitude), lng: parseFloat(longitude) },
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+           ORDER BY ABS(latitude - @lat) + ABS(longitude - @lng)`,
+          { lat, lng },
         );
         province_id = provResult.recordset[0]?.province_id || null;
+      }
+
+      // Lưu geo_province_name để tra cứu (không dùng để xác định province_id nữa)
+      if (!geo_province_name) {
+        geo_province_name = geoResult.recordset[0]?.name || null;
       }
 
       // Auto-assign coordinator based on region
@@ -566,8 +534,12 @@ router.get("/", authenticate, async (req, res, next) => {
 
     // Role-based filtering
     if (req.user.role === "coordinator") {
-      where += ` AND (rr.coordinator_id = @user_id OR rr.province_id IN 
-        (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id))`;
+      where += ` AND (
+        rr.coordinator_id = @user_id
+        OR rr.province_id = (SELECT province_id FROM users WHERE id = @user_id)
+        OR rr.province_id IN (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id)
+        OR rr.province_id IN (SELECT province_id FROM warehouses WHERE coordinator_id = @user_id)
+      )`;
       params.user_id = req.user.id;
     } else if (req.user.role === "rescue_team") {
       where += ` AND rr.assigned_team_id IN 
@@ -1084,8 +1056,11 @@ router.get("/stats/overview", authenticate, async (req, res, next) => {
     const params = {};
 
     if (req.user.role === "coordinator") {
-      regionFilter =
-        "AND province_id IN (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id)";
+      regionFilter = `AND (
+        province_id = (SELECT province_id FROM users WHERE id = @user_id)
+        OR province_id IN (SELECT province_id FROM coordinator_regions WHERE user_id = @user_id)
+        OR province_id IN (SELECT province_id FROM warehouses WHERE coordinator_id = @user_id)
+      )`;
       params.user_id = req.user.id;
     }
 
