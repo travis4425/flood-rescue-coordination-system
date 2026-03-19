@@ -137,12 +137,16 @@ router.get("/warehouses/map", async (req, res, next) => {
 
 router.get("/warehouses", authenticate, async (req, res, next) => {
   try {
-    const { province_id } = req.query;
+    const { province_id, coordinator_id } = req.query;
     const params = {};
     let extraWhere = "";
     if (province_id) {
-      extraWhere = " AND w.province_id = @province_id";
+      extraWhere += " AND w.province_id = @province_id";
       params.province_id = parseInt(province_id);
+    }
+    if (coordinator_id) {
+      extraWhere += " AND w.coordinator_id = @coordinator_id";
+      params.coordinator_id = parseInt(coordinator_id);
     }
     const result = await query(
       `SELECT w.*, p.name as province_name, d.name as district_name,
@@ -605,6 +609,81 @@ router.post(
   },
 );
 
+// PUT /api/resources/distributions/:id/cancel — Coordinator/manager huỷ cấp phát (chưa có kho xác nhận)
+router.put(
+  "/distributions/:id/cancel",
+  authenticate,
+  authorize("manager", "warehouse_manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const dist = await query(
+        `SELECT id, status, warehouse_confirmed, item_id, quantity, warehouse_id
+         FROM relief_distributions WHERE id = @id`,
+        { id },
+      );
+      if (!dist.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy bản ghi." });
+      const row = dist.recordset[0];
+      if (row.status !== "issued")
+        return res.status(400).json({ error: "Chỉ hoàn tác khi chưa đội xác nhận nhận." });
+      if (row.warehouse_confirmed)
+        return res.status(400).json({ error: "Kho đã xác nhận bàn giao, không thể hoàn tác." });
+
+      await query(
+        `UPDATE relief_distributions SET status = 'cancelled' WHERE id = @id`,
+        { id },
+      );
+      // Hoàn lại tồn kho
+      await query(
+        `UPDATE relief_inventory SET quantity = quantity + @qty, updated_at = GETDATE()
+         WHERE warehouse_id = @wid AND item_id = @iid`,
+        { qty: row.quantity, wid: row.warehouse_id, iid: row.item_id },
+      );
+      res.json({ message: "Đã hoàn tác cấp phát. Tồn kho đã được cộng lại." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/distributions/batch/:batchId/cancel — Huỷ phiếu cấp phát theo lô
+router.put(
+  "/distributions/batch/:batchId/cancel",
+  authenticate,
+  authorize("manager", "warehouse_manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const batchId = parseInt(req.params.batchId);
+      const items = await query(
+        `SELECT id, status, warehouse_confirmed, item_id, quantity, warehouse_id
+         FROM relief_distributions WHERE batch_id = @batchId`,
+        { batchId },
+      );
+      if (!items.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy phiếu." });
+      const anyConfirmed = items.recordset.some((r) => r.status !== "issued" || r.warehouse_confirmed);
+      if (anyConfirmed)
+        return res.status(400).json({ error: "Phiếu đã được xác nhận bàn giao, không thể hoàn tác." });
+
+      await query(
+        `UPDATE relief_distributions SET status = 'cancelled' WHERE batch_id = @batchId`,
+        { batchId },
+      );
+      for (const row of items.recordset) {
+        await query(
+          `UPDATE relief_inventory SET quantity = quantity + @qty, updated_at = GETDATE()
+           WHERE warehouse_id = @wid AND item_id = @iid`,
+          { qty: row.quantity, wid: row.warehouse_id, iid: row.item_id },
+        );
+      }
+      res.json({ message: "Đã hoàn tác phiếu cấp phát. Tồn kho đã được cộng lại." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // PUT /api/resources/distributions/:id/confirm — Team leader xác nhận đã nhận hàng
 router.put(
   "/distributions/:id/confirm",
@@ -830,23 +909,25 @@ router.get(
         where += " AND vr.status = @status";
         params.status = status;
       }
-      // Manager chỉ thấy request của tỉnh mình
-      if (req.user.role === "manager" && req.user.province_id) {
-        where += " AND vr.province_id = @province_id";
-        params.province_id = req.user.province_id;
+      if (req.user.role === "coordinator") {
+        where += " AND vr.requested_by = @uid";
+        params.uid = req.user.id;
       }
+      // warehouse_manager và manager thấy tất cả request
 
       const result = await query(
-        `SELECT vr.*, 
+        `SELECT vr.*,
               u.full_name as requested_by_name,
               rt.name as destination_team_name, rt.code as destination_team_code,
               p.name as province_name,
-              approver.full_name as approved_by_name
+              approver.full_name as approved_by_name,
+              w.name as target_warehouse_name
        FROM vehicle_requests vr
        LEFT JOIN users u ON vr.requested_by = u.id
        LEFT JOIN rescue_teams rt ON vr.destination_team_id = rt.id
        LEFT JOIN provinces p ON vr.province_id = p.id
        LEFT JOIN users approver ON vr.approved_by = approver.id
+       LEFT JOIN warehouses w ON w.coordinator_id = vr.requested_by
        ${where}
        ORDER BY vr.created_at DESC`,
         params,
@@ -875,20 +956,31 @@ router.post(
         notes, // Ghi chú thêm
       } = req.body;
 
-      if (!vehicle_type || !quantity || !destination_team_id || !source_type) {
+      if (!vehicle_type || !quantity || !source_type) {
         return res.status(400).json({
-          error:
-            "Thiếu thông tin: vehicle_type, quantity, destination_team_id, source_type",
+          error: "Thiếu thông tin: vehicle_type, quantity, source_type",
         });
       }
 
-      // Lấy province_id của team đích
-      const teamResult = await query(
-        "SELECT province_id FROM rescue_teams WHERE id = @id",
-        { id: parseInt(destination_team_id) },
-      );
-      const province_id =
-        teamResult.recordset[0]?.province_id || req.user.province_id;
+      // Lấy province_id: ưu tiên từ team đích, fallback về user → kho được gán
+      let province_id = req.user.province_id;
+      if (!province_id) {
+        const wRes = await query(
+          "SELECT province_id FROM warehouses WHERE coordinator_id = @uid",
+          { uid: req.user.id }
+        );
+        province_id = wRes.recordset[0]?.province_id;
+      }
+      if (!province_id) {
+        return res.status(400).json({ error: "Tài khoản của bạn chưa được gán kho. Liên hệ quản trị viên." });
+      }
+      if (destination_team_id) {
+        const teamResult = await query(
+          "SELECT province_id FROM rescue_teams WHERE id = @id",
+          { id: parseInt(destination_team_id) },
+        );
+        province_id = teamResult.recordset[0]?.province_id || province_id;
+      }
 
       const result = await query(
         `INSERT INTO vehicle_requests
@@ -900,7 +992,7 @@ router.post(
         {
           type: vehicle_type,
           qty: parseInt(quantity),
-          team_id: parseInt(destination_team_id),
+          team_id: destination_team_id ? parseInt(destination_team_id) : null,
           source_type,
           source_region: source_region || null,
           expected_date: expected_date || null,
@@ -930,28 +1022,82 @@ router.put(
   async (req, res, next) => {
     try {
       const { status, notes } = req.body;
-      const validStatuses = ["approved", "rejected", "fulfilled", "cancelled"];
+      const validStatuses = ["manager_approved", "approved", "rejected", "fulfilled", "cancelled"];
       if (!validStatuses.includes(status)) {
         return res.status(400).json({ error: "Trạng thái không hợp lệ." });
       }
+
+      // Manager chỉ được set manager_approved hoặc rejected
+      if (req.user.role === "manager" && !["manager_approved", "rejected"].includes(status)) {
+        return res.status(403).json({ error: "Manager chỉ được duyệt hoặc từ chối." });
+      }
+      // Warehouse manager chỉ được set approved
+      if (req.user.role === "warehouse_manager" && status !== "approved") {
+        return res.status(403).json({ error: "Kiểm kho chỉ được xác nhận nhập kho." });
+      }
+
+      const reqId = parseInt(req.params.id);
 
       await query(
         `UPDATE vehicle_requests
          SET status = @status, notes = COALESCE(@notes, notes),
              approved_by = @approved_by, updated_at = GETDATE()
          WHERE id = @id`,
-        {
-          id: parseInt(req.params.id),
-          status,
-          notes: notes || null,
-          approved_by: req.user.id,
-        },
+        { id: reqId, status, notes: notes || null, approved_by: req.user.id },
       );
+
+      // Kho duyệt → tự động tạo xe vào kho của coordinator gửi request
+      if (status === "approved" && req.user.role === "warehouse_manager") {
+        const vrRes = await query(
+          `SELECT vr.vehicle_type, vr.quantity, vr.province_id, vr.requested_by
+           FROM vehicle_requests vr WHERE vr.id = @id`,
+          { id: reqId },
+        );
+        const vr = vrRes.recordset[0];
+        if (vr) {
+          // Tìm kho của coordinator đã gửi request
+          const warehouseRes = await query(
+            "SELECT id, province_id FROM warehouses WHERE coordinator_id = @uid",
+            { uid: vr.requested_by },
+          );
+          const warehouse = warehouseRes.recordset[0];
+          const provinceId = warehouse?.province_id || vr.province_id || null;
+
+          const VN_LABELS = {
+            boat: 'Xuồng/Tàu', truck: 'Xe tải', car: 'Xe con',
+            helicopter: 'Trực thăng', ambulance: 'Xe cứu thương',
+          };
+          const DEFAULT_CAPACITY = {
+            boat: 8, truck: 20, car: 4, helicopter: 6, ambulance: 4, other: 5,
+          };
+          const typeName = VN_LABELS[vr.vehicle_type] || vr.vehicle_type;
+          const capacity = DEFAULT_CAPACITY[vr.vehicle_type] || 4;
+
+          for (let i = 0; i < vr.quantity; i++) {
+            const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+            await query(
+              `INSERT INTO vehicles (name, type, plate_number, capacity, province_id, warehouse_id, status)
+               VALUES (@name, @type, @plate, @capacity, @province_id, @warehouse_id, 'available')`,
+              {
+                name: typeName,
+                type: vr.vehicle_type,
+                plate: `YC${reqId}-${suffix}`,
+                capacity,
+                province_id: provinceId,
+                warehouse_id: warehouse?.id || null,
+              },
+            );
+          }
+        }
+      }
 
       const io = req.app.get("io");
       if (io) io.emit("vehicle_request_updated", { id: req.params.id, status });
 
-      res.json({ message: `Đã cập nhật trạng thái: ${status}` });
+      const msg = status === "approved" && req.user.role === "warehouse_manager"
+        ? "Đã duyệt. Xe đã được thêm vào kho."
+        : `Đã cập nhật trạng thái: ${status}`;
+      res.json({ message: msg });
     } catch (err) {
       next(err);
     }
@@ -1154,6 +1300,42 @@ router.post(
         id: result.recordset[0].id,
         message: "Đã điều xe cho đội. Xe đang được sử dụng.",
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/resources/vehicle-dispatches/:id/cancel — Huỷ điều xe (chưa có kho xác nhận bàn giao)
+router.put(
+  "/vehicle-dispatches/:id/cancel",
+  authenticate,
+  authorize("manager", "warehouse_manager", "coordinator"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vd = await query(
+        `SELECT id, status, warehouse_confirmed, vehicle_id FROM vehicle_dispatches WHERE id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy phiếu điều xe." });
+      const row = vd.recordset[0];
+      if (row.status !== "dispatched")
+        return res.status(400).json({ error: "Chỉ hoàn tác khi xe chưa được đội xác nhận nhận." });
+      if (row.warehouse_confirmed)
+        return res.status(400).json({ error: "Kho đã xác nhận bàn giao, không thể hoàn tác." });
+
+      await query(
+        `UPDATE vehicle_dispatches SET status = 'cancelled', updated_at = GETDATE() WHERE id = @id`,
+        { id },
+      );
+      // Trả xe về available
+      await query(
+        `UPDATE vehicles SET status = 'available', updated_at = GETDATE() WHERE id = @vid`,
+        { vid: row.vehicle_id },
+      );
+      res.json({ message: "Đã hoàn tác điều xe. Xe đã được trả về trạng thái sẵn sàng." });
     } catch (err) {
       next(err);
     }
@@ -1938,7 +2120,7 @@ router.put(
 router.get(
   "/supply-requests",
   authenticate,
-  authorize("coordinator", "manager"),
+  authorize("coordinator", "manager", "warehouse_manager"),
   async (req, res, next) => {
     try {
       const { user } = req;
@@ -1946,6 +2128,10 @@ router.get(
       const params = {};
       if (user.role === "coordinator") {
         where = "WHERE sr.requester_id = @uid";
+        params.uid = user.id;
+      } else if (user.role === "warehouse_manager") {
+        // Kho manager thấy toàn bộ lịch sử request cho kho của mình
+        where = `WHERE sr.warehouse_id IN (SELECT id FROM warehouses WHERE manager_id = @uid)`;
         params.uid = user.id;
       }
       const result = await query(
@@ -2022,40 +2208,18 @@ router.put(
           .status(404)
           .json({ error: "Không tìm thấy yêu cầu đang chờ duyệt." });
 
-      const sr = srRes.recordset[0];
-
-      // Cập nhật status
+      // Cập nhật status → manager_approved (kho sẽ xác nhận nhập hàng sau)
       await query(
-        `UPDATE supply_requests SET status = 'approved', reviewed_by = @uid,
+        `UPDATE supply_requests SET status = 'manager_approved', reviewed_by = @uid,
          review_note = @note, reviewed_at = GETDATE()
          WHERE id = @id`,
         { uid: req.user.id, note: review_note || null, id },
       );
 
-      // Cộng số lượng vào relief_inventory
-      const invCheck = await query(
-        `SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid`,
-        { wid: sr.warehouse_id, iid: sr.item_id },
-      );
-      if (invCheck.recordset.length > 0) {
-        await query(
-          `UPDATE relief_inventory SET quantity = quantity + @qty, last_restocked = GETDATE(), updated_at = GETDATE()
-           WHERE warehouse_id = @wid AND item_id = @iid`,
-          { qty: sr.requested_quantity, wid: sr.warehouse_id, iid: sr.item_id },
-        );
-      } else {
-        // Chưa có dòng inventory → tạo mới
-        await query(
-          `INSERT INTO relief_inventory (warehouse_id, item_id, quantity, min_threshold)
-           VALUES (@wid, @iid, @qty, 0)`,
-          { wid: sr.warehouse_id, iid: sr.item_id, qty: sr.requested_quantity },
-        );
-      }
-
       const io = req.app.get("io");
-      if (io) io.emit("supply_request_updated", { id, status: "approved" });
+      if (io) io.emit("supply_request_updated", { id, status: "manager_approved" });
       res.json({
-        message: `Đã duyệt. Đã cộng ${sr.requested_quantity} vào tồn kho.`,
+        message: "Đã duyệt. Kho hàng sẽ xác nhận nhập và cập nhật tồn kho.",
       });
     } catch (err) {
       next(err);
@@ -2085,6 +2249,56 @@ router.put(
           status: "rejected",
         });
       res.json({ message: "Đã từ chối yêu cầu." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Kho xác nhận nhập hàng → cộng inventory
+router.put(
+  "/supply-requests/:id/warehouse-confirm",
+  authenticate,
+  authorize("warehouse_manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const srRes = await query(
+        `SELECT * FROM supply_requests WHERE id = @id AND status = 'manager_approved'`,
+        { id },
+      );
+      if (srRes.recordset.length === 0)
+        return res.status(404).json({ error: "Không tìm thấy yêu cầu đã được manager duyệt." });
+
+      const sr = srRes.recordset[0];
+
+      await query(
+        `UPDATE supply_requests SET status = 'approved', reviewed_at = GETDATE() WHERE id = @id`,
+        { id },
+      );
+
+      // Cộng số lượng vào relief_inventory
+      const invCheck = await query(
+        `SELECT id FROM relief_inventory WHERE warehouse_id = @wid AND item_id = @iid`,
+        { wid: sr.warehouse_id, iid: sr.item_id },
+      );
+      if (invCheck.recordset.length > 0) {
+        await query(
+          `UPDATE relief_inventory SET quantity = quantity + @qty, last_restocked = GETDATE(), updated_at = GETDATE()
+           WHERE warehouse_id = @wid AND item_id = @iid`,
+          { qty: sr.requested_quantity, wid: sr.warehouse_id, iid: sr.item_id },
+        );
+      } else {
+        await query(
+          `INSERT INTO relief_inventory (warehouse_id, item_id, quantity, min_threshold)
+           VALUES (@wid, @iid, @qty, 0)`,
+          { wid: sr.warehouse_id, iid: sr.item_id, qty: sr.requested_quantity },
+        );
+      }
+
+      const io = req.app.get("io");
+      if (io) io.emit("supply_request_updated", { id, status: "approved" });
+      res.json({ message: `Đã xác nhận nhập kho. Tồn kho đã được cộng ${sr.requested_quantity}.` });
     } catch (err) {
       next(err);
     }
