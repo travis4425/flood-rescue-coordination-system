@@ -81,7 +81,7 @@ router.get(
         limit = 10,
       } = req.query;
 
-      let where = "WHERE rr.status IN ('pending','verified')";
+      let where = "WHERE rr.status = 'verified'";
       const params = {
         limit: parseInt(limit),
       };
