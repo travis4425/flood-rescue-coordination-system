@@ -2,16 +2,6 @@ const router = require("express").Router();
 const { query } = require("../config/database");
 const { authenticate, authorize } = require("../middlewares/auth");
 
-// GET /api/regions
-router.get("/", async (req, res, next) => {
-  try {
-    const result = await query("SELECT * FROM regions ORDER BY id");
-    res.json(result.recordset);
-  } catch (err) {
-    next(err);
-  }
-});
-
 // GET /api/regions/provinces
 router.get("/provinces", async (req, res, next) => {
   try {
@@ -26,42 +16,6 @@ router.get("/provinces", async (req, res, next) => {
       `SELECT p.*, r.name as region_name FROM provinces p
        JOIN regions r ON p.region_id = r.id ${where} ORDER BY r.id, p.name`,
       params,
-    );
-    res.json(result.recordset);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/regions/districts
-router.get("/districts", async (req, res, next) => {
-  try {
-    const { province_id } = req.query;
-    let where = "";
-    const params = {};
-    if (province_id) {
-      where = "WHERE d.province_id = @province_id";
-      params.province_id = parseInt(province_id);
-    }
-    const result = await query(
-      `SELECT d.*, p.name as province_name FROM districts d
-       JOIN provinces p ON d.province_id = p.id ${where} ORDER BY d.name`,
-      params,
-    );
-    res.json(result.recordset);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/regions/wards
-router.get("/wards", async (req, res, next) => {
-  try {
-    const { district_id } = req.query;
-    if (!district_id) return res.status(400).json({ error: "Cần district_id" });
-    const result = await query(
-      "SELECT * FROM wards WHERE district_id = @district_id ORDER BY name",
-      { district_id: parseInt(district_id) },
     );
     res.json(result.recordset);
   } catch (err) {
@@ -154,7 +108,6 @@ router.post(
         },
       );
 
-      // Emit realtime alert
       const io = req.app.get("io");
       if (io) {
         io.emit("weather_alert", result.recordset[0]);
@@ -172,72 +125,11 @@ router.post(
   },
 );
 
-// PUT /api/regions/weather-alerts/:id - Update weather alert
-router.put(
-  "/weather-alerts/:id",
-  authenticate,
-  authorize("admin", "manager"),
-  async (req, res, next) => {
-    try {
-      const {
-        province_id,
-        alert_type,
-        severity,
-        title,
-        description,
-        starts_at,
-        expires_at,
-        source,
-      } = req.body;
-      await query(
-        `
-      UPDATE weather_alerts SET
-        province_id = @province_id, alert_type = @alert_type, severity = @severity,
-        title = @title, description = @description, starts_at = @starts_at,
-        expires_at = @expires_at, source = @source
-      WHERE id = @id
-    `,
-        {
-          id: parseInt(req.params.id),
-          province_id: province_id ? parseInt(province_id) : null,
-          alert_type,
-          severity,
-          title,
-          description,
-          starts_at,
-          expires_at,
-          source,
-        },
-      );
-      res.json({ message: "Đã cập nhật cảnh báo" });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-// DELETE /api/regions/weather-alerts/:id
-router.delete(
-  "/weather-alerts/:id",
-  authenticate,
-  authorize("admin", "manager"),
-  async (req, res, next) => {
-    try {
-      await query("DELETE FROM weather_alerts WHERE id = @id", {
-        id: parseInt(req.params.id),
-      });
-      res.json({ message: "Đã xóa cảnh báo" });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
 // ==================== WEATHER API (OpenWeatherMap) ====================
 
 const weatherService = require("../services/weatherService");
 
-// GET /api/regions/weather-status - Kiểm tra API key đã cấu hình chưa
+// GET /api/regions/weather-status
 router.get("/weather-status", (req, res) => {
   res.json({
     configured: weatherService.isConfigured(),
@@ -247,7 +139,7 @@ router.get("/weather-status", (req, res) => {
   });
 });
 
-// GET /api/regions/weather-current/:provinceId - Thời tiết hiện tại theo tỉnh
+// GET /api/regions/weather-current/:provinceId
 router.get("/weather-current/:provinceId", async (req, res, next) => {
   try {
     if (!weatherService.isConfigured()) {
@@ -288,7 +180,7 @@ router.get("/weather-current/:provinceId", async (req, res, next) => {
   }
 });
 
-// GET /api/regions/weather-forecast/:provinceId - Dự báo 5 ngày theo tỉnh
+// GET /api/regions/weather-forecast/:provinceId
 router.get("/weather-forecast/:provinceId", async (req, res, next) => {
   try {
     if (!weatherService.isConfigured()) {
@@ -318,7 +210,6 @@ router.get("/weather-forecast/:provinceId", async (req, res, next) => {
       province.longitude,
     );
 
-    // Thêm icon URL cho mỗi ngày
     forecast.daily = forecast.daily.map((d) => ({
       ...d,
       icon_url: weatherService.getIconUrl(d.weather_icon),
@@ -334,7 +225,7 @@ router.get("/weather-forecast/:provinceId", async (req, res, next) => {
   }
 });
 
-// GET /api/regions/weather-by-coords?lat=&lon= - Thời tiết theo tọa độ GPS
+// GET /api/regions/weather-by-coords?lat=&lon=
 router.get("/weather-by-coords", async (req, res, next) => {
   try {
     if (!weatherService.isConfigured()) {
@@ -346,14 +237,16 @@ router.get("/weather-by-coords", async (req, res, next) => {
       return res.status(400).json({ error: "Thiếu tọa độ lat/lon" });
     }
     const weather = await weatherService.getCurrentWeather(lat, lon);
-    res.json({ ...weather, icon_url: weatherService.getIconUrl(weather.weather_icon) });
+    res.json({
+      ...weather,
+      icon_url: weatherService.getIconUrl(weather.weather_icon),
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/regions/weather-alerts/auto-sync - Tự động lấy dữ liệu thời tiết và tạo cảnh báo
-// Chỉ Manager/Admin mới được gọi
+// POST /api/regions/weather-alerts/auto-sync
 router.post(
   "/weather-alerts/auto-sync",
   authenticate,
@@ -367,8 +260,7 @@ router.post(
         });
       }
 
-      // Lấy danh sách province_ids cần kiểm tra (hoặc tất cả nếu không chỉ định)
-      const { province_ids } = req.body; // optional: [1, 2, 3]
+      const { province_ids } = req.body;
 
       let provincesResult;
       if (province_ids && province_ids.length > 0) {
@@ -377,11 +269,10 @@ router.post(
           `SELECT id, name, latitude, longitude FROM provinces WHERE id IN (${idList}) AND latitude IS NOT NULL`,
         );
       } else {
-        // Lấy tất cả tỉnh (chỉ 1 vùng Miền Nam nên không cần lọc theo region)
         provincesResult = await query(
           `SELECT id, name, latitude, longitude FROM provinces
-         WHERE latitude IS NOT NULL
-         ORDER BY id`,
+           WHERE latitude IS NOT NULL
+           ORDER BY id`,
         );
       }
 
@@ -399,7 +290,6 @@ router.post(
 
       for (const province of provinces) {
         try {
-          // Delay giữa các request để không bị rate limit
           if (provinces.indexOf(province) > 0) {
             await new Promise((r) => setTimeout(r, 300));
           }
@@ -418,27 +308,22 @@ router.post(
           );
 
           for (const risk of risks) {
-            // Kiểm tra trùng lặp: không tạo alert cùng type + province trong 6 giờ gần đây
             const existing = await query(
-              `
-            SELECT TOP 1 id FROM weather_alerts 
-            WHERE province_id = @pid AND alert_type = @type 
-              AND created_at > DATEADD(HOUR, -6, GETDATE())
-          `,
+              `SELECT TOP 1 id FROM weather_alerts
+               WHERE province_id = @pid AND alert_type = @type
+                 AND created_at > DATEADD(HOUR, -6, GETDATE())`,
               { pid: province.id, type: risk.type },
             );
 
-            if (existing.recordset.length > 0) continue; // Đã có alert tương tự
+            if (existing.recordset.length > 0) continue;
 
             const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 12); // Hết hạn sau 12 giờ
+            expiresAt.setHours(expiresAt.getHours() + 12);
 
             const insertResult = await query(
-              `
-            INSERT INTO weather_alerts (province_id, alert_type, severity, title, description, starts_at, expires_at, source)
-            OUTPUT INSERTED.*
-            VALUES (@pid, @type, @severity, @title, @desc, GETDATE(), @expires, N'OpenWeatherMap API (auto)')
-          `,
+              `INSERT INTO weather_alerts (province_id, alert_type, severity, title, description, starts_at, expires_at, source)
+               OUTPUT INSERTED.*
+               VALUES (@pid, @type, @severity, @title, @desc, GETDATE(), @expires, N'OpenWeatherMap API (auto)')`,
               {
                 pid: province.id,
                 type: risk.type,
@@ -452,7 +337,6 @@ router.post(
             const newAlert = insertResult.recordset[0];
             alertsCreated.push(newAlert);
 
-            // Emit realtime
             if (io) {
               io.emit("weather_alert", {
                 ...newAlert,
@@ -480,145 +364,6 @@ router.post(
         alerts: alertsCreated,
         errors: errors.length > 0 ? errors : undefined,
       });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-// --- INCIDENT TYPES CRUD (Admin) ---
-
-// POST /api/regions/incident-types
-router.post(
-  "/incident-types",
-  authenticate,
-  authorize("admin"),
-  async (req, res, next) => {
-    try {
-      const { name, code, icon, color, description } = req.body;
-      const result = await query(
-        `
-      INSERT INTO incident_types (name, code, icon, color, description)
-      OUTPUT INSERTED.*
-      VALUES (@name, @code, @icon, @color, @desc)
-    `,
-        {
-          name,
-          code,
-          icon: icon || null,
-          color: color || null,
-          desc: description || null,
-        },
-      );
-      res.status(201).json(result.recordset[0]);
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-// PUT /api/regions/incident-types/:id
-router.put(
-  "/incident-types/:id",
-  authenticate,
-  authorize("admin"),
-  async (req, res, next) => {
-    try {
-      const { name, code, icon, color, description, is_active } = req.body;
-      await query(
-        `
-      UPDATE incident_types SET name = @name, code = @code, icon = @icon,
-        color = @color, description = @desc, is_active = @isActive
-      WHERE id = @id
-    `,
-        {
-          id: parseInt(req.params.id),
-          name,
-          code,
-          icon,
-          color,
-          desc: description,
-          isActive: is_active !== false ? 1 : 0,
-        },
-      );
-      res.json({ message: "Đã cập nhật loại sự cố" });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-// --- URGENCY LEVELS CRUD (Admin) ---
-
-// POST /api/regions/urgency-levels
-router.post(
-  "/urgency-levels",
-  authenticate,
-  authorize("admin"),
-  async (req, res, next) => {
-    try {
-      const {
-        name,
-        code,
-        priority_score,
-        color,
-        max_response_minutes,
-        description,
-      } = req.body;
-      const result = await query(
-        `
-      INSERT INTO urgency_levels (name, code, priority_score, color, max_response_minutes, description)
-      OUTPUT INSERTED.*
-      VALUES (@name, @code, @score, @color, @maxMin, @desc)
-    `,
-        {
-          name,
-          code,
-          score: parseInt(priority_score),
-          color,
-          maxMin: max_response_minutes ? parseInt(max_response_minutes) : null,
-          desc: description || null,
-        },
-      );
-      res.status(201).json(result.recordset[0]);
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-// PUT /api/regions/urgency-levels/:id
-router.put(
-  "/urgency-levels/:id",
-  authenticate,
-  authorize("admin"),
-  async (req, res, next) => {
-    try {
-      const {
-        name,
-        code,
-        priority_score,
-        color,
-        max_response_minutes,
-        description,
-      } = req.body;
-      await query(
-        `
-      UPDATE urgency_levels SET name = @name, code = @code, priority_score = @score,
-        color = @color, max_response_minutes = @maxMin, description = @desc
-      WHERE id = @id
-    `,
-        {
-          id: parseInt(req.params.id),
-          name,
-          code,
-          score: parseInt(priority_score),
-          color,
-          maxMin: max_response_minutes ? parseInt(max_response_minutes) : null,
-          desc: description,
-        },
-      );
-      res.json({ message: "Đã cập nhật mức độ khẩn cấp" });
     } catch (err) {
       next(err);
     }
