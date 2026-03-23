@@ -21,7 +21,7 @@ router.get("/", authenticate, async (req, res, next) => {
       `SELECT rt.*, u.full_name as leader_name, u.phone as leader_phone,
               p.name as province_name, d.name as district_name,
               (SELECT COUNT(*) FROM rescue_team_members WHERE team_id = rt.id) as member_count,
-              (SELECT COUNT(*) FROM missions WHERE team_id = rt.id AND status NOT IN ('completed','aborted')) as active_missions
+              (SELECT COUNT(*) FROM missions WHERE team_id = rt.id AND status NOT IN ('completed','aborted','failed')) as active_missions
        FROM rescue_teams rt
        LEFT JOIN users u ON rt.leader_id = u.id
        LEFT JOIN provinces p ON rt.province_id = p.id
