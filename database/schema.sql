@@ -646,4 +646,26 @@ CREATE INDEX idx_dbatch_created ON distribution_batches(created_at DESC);
 ALTER TABLE relief_distributions ADD batch_id INT NULL REFERENCES distribution_batches(id);
 CREATE INDEX idx_dist_batch ON relief_distributions(batch_id);
 
+-- *27. TRACKING STATUS — citizen-facing request progress (separate from coordinator status)
+-- Flow: submitted → received → assigned → team_ready → en_route → completed
+--       or: → incident_reported (leader báo cáo không cứu được)
+ALTER TABLE rescue_requests ADD tracking_status VARCHAR(30) NOT NULL DEFAULT 'submitted'
+    CHECK (tracking_status IN (
+        'submitted',        -- Citizen vừa gửi yêu cầu
+        'received',         -- Coordinator đã xác nhận / tiếp nhận
+        'assigned',         -- Đã phân công vào task, chia đội
+        'team_ready',       -- Đội đã nhận vật tư, sẵn sàng xuất phát
+        'en_route',         -- Đội đang trên đường đến
+        'completed',        -- Hoàn thành cứu hộ
+        'incident_reported' -- Có sự cố, không cứu được
+    ));
+ALTER TABLE rescue_requests ADD incident_report_note NVARCHAR(MAX) NULL;
+ALTER TABLE rescue_requests ADD incident_team_info   NVARCHAR(MAX) NULL;
+CREATE INDEX idx_requests_tracking_status ON rescue_requests(tracking_status);
+
+-- *28. TASK_ID on distribution_batches and vehicle_dispatches
+--      Allows filtering supplies/vehicles by specific task (not just team)
+ALTER TABLE distribution_batches ADD task_id INT NULL REFERENCES task_groups(id);
+ALTER TABLE vehicle_dispatches   ADD task_id INT NULL REFERENCES task_groups(id);
+
 GO
