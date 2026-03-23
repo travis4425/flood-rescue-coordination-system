@@ -44,15 +44,34 @@ router.get("/", authenticate, async (req, res, next) => {
               u.full_name as coordinator_name,
               rt.name as team_name, rt.code as team_code,
               p.name as province_name,
-              (SELECT COUNT(*) FROM missions m WHERE m.task_group_id = tg.id) as total_sub,
-              (SELECT COUNT(*) FROM missions m WHERE m.task_group_id = tg.id AND m.status = 'completed') as completed_sub,
-              (SELECT COUNT(*) FROM missions m WHERE m.task_group_id = tg.id AND m.status = 'failed') as failed_sub,
-              (SELECT COUNT(*) FROM task_incident_reports ir WHERE ir.task_group_id = tg.id AND ir.status = 'pending') as pending_reports,
-              (SELECT COUNT(*) - 1 FROM task_group_teams tgt WHERE tgt.task_group_id = tg.id) as extra_team_count
+              ISNULL(ms.total_sub, 0) as total_sub,
+              ISNULL(ms.completed_sub, 0) as completed_sub,
+              ISNULL(ms.failed_sub, 0) as failed_sub,
+              ISNULL(ir.pending_reports, 0) as pending_reports,
+              ISNULL(tgt.extra_team_count, 0) as extra_team_count
        FROM task_groups tg
        JOIN users u ON tg.coordinator_id = u.id
        LEFT JOIN rescue_teams rt ON tg.team_id = rt.id
        LEFT JOIN provinces p ON tg.province_id = p.id
+       LEFT JOIN (
+         SELECT task_group_id,
+                COUNT(*) as total_sub,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_sub,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_sub
+         FROM missions
+         GROUP BY task_group_id
+       ) ms ON ms.task_group_id = tg.id
+       LEFT JOIN (
+         SELECT task_group_id, COUNT(*) as pending_reports
+         FROM task_incident_reports
+         WHERE status = 'pending'
+         GROUP BY task_group_id
+       ) ir ON ir.task_group_id = tg.id
+       LEFT JOIN (
+         SELECT task_group_id, COUNT(*) - 1 as extra_team_count
+         FROM task_group_teams
+         GROUP BY task_group_id
+       ) tgt ON tgt.task_group_id = tg.id
        ${where}
        ORDER BY ISNULL(tg.scheduled_date, CAST(tg.created_at AS DATE)), tg.created_at DESC`,
       params,
@@ -199,8 +218,10 @@ router.post(
       // Create a mission for each request, gán đúng đội
       for (const item of requestList) {
         await query(
-          `UPDATE rescue_requests SET status = 'assigned', assigned_team_id = @team_id,
-           coordinator_id = @coord_id, assigned_at = GETDATE(), updated_at = GETDATE()
+          `UPDATE rescue_requests
+           SET status = 'assigned', tracking_status = 'assigned',
+               assigned_team_id = @team_id,
+               coordinator_id = @coord_id, assigned_at = GETDATE(), updated_at = GETDATE()
            WHERE id = @req_id AND status IN ('pending','verified')`,
           { team_id: item.team_id, coord_id: req.user.id, req_id: item.id },
         );
@@ -344,11 +365,40 @@ router.get("/:id", authenticate, async (req, res, next) => {
       { task_id: taskId },
     );
 
+    // Get distributions allocated to this specific task
+    const distributionsRes = await query(
+      `SELECT rd.*, ri.name as item_name, ri.unit,
+              u.full_name as distributed_by_name,
+              w.name as warehouse_name
+       FROM relief_distributions rd
+       JOIN relief_items ri ON rd.item_id = ri.id
+       LEFT JOIN users u ON rd.distributed_by = u.id
+       LEFT JOIN warehouses w ON rd.warehouse_id = w.id
+       JOIN distribution_batches db ON rd.batch_id = db.id
+       WHERE db.task_id = @task_id AND rd.distribution_type = 'issue'
+       ORDER BY rd.created_at DESC`,
+      { task_id: taskId },
+    );
+
+    // Get vehicle dispatches allocated to this specific task
+    const vehicleDispatchesRes = await query(
+      `SELECT vd.*, v.name as vehicle_name, v.plate_number, v.type as vehicle_type,
+              u.full_name as dispatched_by_name
+       FROM vehicle_dispatches vd
+       JOIN vehicles v ON vd.vehicle_id = v.id
+       LEFT JOIN users u ON vd.dispatched_by = u.id
+       WHERE vd.task_id = @task_id
+       ORDER BY vd.dispatched_at DESC`,
+      { task_id: taskId },
+    );
+
     res.json({
       ...task,
       missions,
       incident_reports: reportsRes.recordset,
       all_teams: allTeamsRes.recordset,
+      distributions: distributionsRes.recordset,
+      vehicle_dispatches: vehicleDispatchesRes.recordset,
     });
   } catch (err) {
     next(err);
