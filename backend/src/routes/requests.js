@@ -252,6 +252,8 @@ router.get("/track/:trackingCode", async (req, res, next) => {
               rr.rescue_team_confirmed,
               rr.created_at, rr.verified_at, rr.assigned_at, rr.started_at, rr.completed_at,
               rr.result_notes, rr.rescued_count, rr.reject_reason,
+              ISNULL(rr.tracking_status, 'submitted') as tracking_status,
+              rr.incident_report_note, rr.incident_team_info,
               it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.phone as team_phone,
@@ -616,8 +618,9 @@ router.put(
       const { urgency_level_id, flood_severity, notes } = req.body;
 
       await query(
-        `UPDATE rescue_requests 
-       SET status = 'verified', 
+        `UPDATE rescue_requests
+       SET status = 'verified',
+           tracking_status = 'received',
            urgency_level_id = COALESCE(@urgency_level_id, urgency_level_id),
            flood_severity = COALESCE(@flood_severity, flood_severity),
            coordinator_id = @coordinator_id,
@@ -828,7 +831,7 @@ router.put(
 // TEAM: Update request status
 // PUT /api/requests/:id/status
 // ============================================================
-router.put("/:id/status", authenticate, async (req, res, next) => {
+router.put("/:id/status", authenticate, authorize("rescue_team", "coordinator"), async (req, res, next) => {
   try {
     const { status, result_notes, rescued_count } = req.body;
     const validStatuses = ["in_progress", "completed", "cancelled"];
