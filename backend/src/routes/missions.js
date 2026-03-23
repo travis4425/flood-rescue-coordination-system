@@ -64,6 +64,7 @@ router.get("/", authenticate, async (req, res, next) => {
               rr.tracking_code, rr.latitude, rr.longitude, rr.address, rr.description,
               rr.citizen_name, rr.citizen_phone, rr.victim_count, rr.support_type,
               rr.priority_score, rr.flood_severity, rr.status as request_status,
+              ISNULL(rr.tracking_status, 'submitted') as tracking_status,
               it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.code as team_code,
@@ -158,11 +159,21 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
     if (mission.recordset[0]) {
       const { request_id, team_id, tracking_code } = mission.recordset[0];
 
+      // Khi leader bấm Nhận (accepted) → tracking_status = en_route ngay
+      if (status === "accepted") {
+        await query(
+          `UPDATE rescue_requests SET tracking_status = 'en_route', updated_at = GETDATE()
+           WHERE id = @request_id`,
+          { request_id },
+        );
+      }
+
       // Sync request to in_progress when team is moving/on scene
       if (status === "en_route" || status === "on_scene") {
         await query(
-          `UPDATE rescue_requests SET status = 'in_progress', updated_at = GETDATE(),
-           started_at = COALESCE(started_at, GETDATE()) WHERE id = @request_id`,
+          `UPDATE rescue_requests SET status = 'in_progress', tracking_status = 'en_route',
+           updated_at = GETDATE(), started_at = COALESCE(started_at, GETDATE())
+           WHERE id = @request_id`,
           { request_id },
         );
       }
@@ -170,10 +181,35 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
       // When completed: auto-close the request immediately (no citizen confirm needed)
       if (status === "completed") {
         await query(
-          `UPDATE rescue_requests SET status = 'completed', rescue_team_confirmed = 1,
-           completed_at = GETDATE(), updated_at = GETDATE()
+          `UPDATE rescue_requests SET status = 'completed', tracking_status = 'completed',
+           rescue_team_confirmed = 1, completed_at = GETDATE(), updated_at = GETDATE()
            WHERE id = @request_id`,
           { request_id },
+        );
+      }
+
+      // When failed: update tracking_status to incident_reported with team info
+      if (status === "failed") {
+        const teamInfo = await query(
+          `SELECT rt.name as team_name, rt.code as team_code, u.full_name as leader_name, u.phone as leader_phone
+           FROM missions m
+           JOIN rescue_teams rt ON m.team_id = rt.id
+           LEFT JOIN users u ON rt.leader_id = u.id
+           WHERE m.id = @mid`,
+          { mid: parseInt(req.params.id) },
+        );
+        const ti = teamInfo.recordset[0];
+        const teamInfoJson = ti
+          ? JSON.stringify({ team_name: ti.team_name, team_code: ti.team_code, leader_name: ti.leader_name, leader_phone: ti.leader_phone })
+          : null;
+        await query(
+          `UPDATE rescue_requests
+           SET tracking_status = 'incident_reported',
+               incident_report_note = @notes,
+               incident_team_info = @team_info,
+               updated_at = GETDATE()
+           WHERE id = @request_id`,
+          { request_id, notes: notes || null, team_info: teamInfoJson },
         );
       }
 
