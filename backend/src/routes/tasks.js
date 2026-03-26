@@ -299,6 +299,8 @@ router.get("/:id", authenticate, async (req, res, next) => {
               rr.tracking_code, rr.address, rr.latitude, rr.longitude,
               rr.citizen_name, rr.citizen_phone, rr.victim_count, ISNULL(rr.rescued_count, 0) as rescued_count, rr.description,
               rr.priority_score, rr.flood_severity, rr.support_type,
+              ISNULL(rr.citizen_rescued_by_other_count, 0) as citizen_rescued_by_other_count,
+              rr.reject_reason,
               it.name as incident_type, ul.name as urgency_level, ul.color as urgency_color,
               u.full_name as assigned_to_name
        FROM missions m
@@ -441,7 +443,7 @@ router.get("/:id/all-members", authenticate, async (req, res, next) => {
 
 // ─── PUT /api/tasks/:id/assign-member ────────────────────────────────────────
 // Leader assigns a sub-mission to one or multiple team members
-router.put("/:id/assign-member", authenticate, async (req, res, next) => {
+router.put("/:id/assign-member", authenticate, authorize("rescue_team", "coordinator"), async (req, res, next) => {
   try {
     const { mission_id, user_id, user_ids } = req.body;
     if (!mission_id || (!user_id && (!user_ids || user_ids.length === 0))) {
@@ -516,7 +518,7 @@ router.put("/:id/assign-member", authenticate, async (req, res, next) => {
 
 // ─── POST /api/tasks/:id/reports ─────────────────────────────────────────────
 // Member or Leader submits an incident report for a stalled/unrescuable sub-mission
-router.post("/:id/reports", authenticate, async (req, res, next) => {
+router.post("/:id/reports", authenticate, authorize("rescue_team", "coordinator"), async (req, res, next) => {
   try {
     const { mission_id, report_type, urgency, support_type, description } =
       req.body;
