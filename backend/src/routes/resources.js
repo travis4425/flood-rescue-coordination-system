@@ -28,12 +28,23 @@ router.get("/vehicles", authenticate, async (req, res, next) => {
     }
 
     const result = await query(
-      `SELECT v.*, p.name as province_name, rt.name as team_name,
+      `SELECT v.*, p.name as province_name,
+              COALESCE(rt.name, dispatch_team.name) as team_name,
               w.name as warehouse_name
        FROM vehicles v WITH (NOLOCK)
        LEFT JOIN provinces p WITH (NOLOCK) ON v.province_id = p.id
        LEFT JOIN rescue_teams rt WITH (NOLOCK) ON v.team_id = rt.id
        LEFT JOIN warehouses w WITH (NOLOCK) ON v.warehouse_id = w.id
+       LEFT JOIN (
+         SELECT vd.vehicle_id, rt2.name
+         FROM vehicle_dispatches vd
+         JOIN rescue_teams rt2 ON vd.team_id = rt2.id
+         WHERE vd.status IN ('dispatched', 'confirmed')
+           AND vd.id = (SELECT TOP 1 id FROM vehicle_dispatches vd2
+                        WHERE vd2.vehicle_id = vd.vehicle_id
+                          AND vd2.status IN ('dispatched','confirmed')
+                        ORDER BY vd2.created_at DESC)
+       ) dispatch_team ON dispatch_team.vehicle_id = v.id
        ${where} ORDER BY v.name`,
       params,
     );
@@ -753,14 +764,24 @@ router.put(
         );
       }
       if (pending.recordset[0].cnt === 0) {
-        await query(
-          `UPDATE rescue_requests
-           SET tracking_status = 'team_ready', updated_at = GETDATE()
-           WHERE assigned_team_id = @team_id AND status = 'assigned' AND tracking_status = 'assigned'`,
-          { team_id: row.team_id },
-        );
-        const io = req.app.get("io");
-        if (io) io.emit("team_ready", { team_id: row.team_id });
+        // Also check pending vehicle dispatches for this task before setting team_ready
+        let pendingVehicles = { recordset: [{ cnt: 0 }] };
+        if (taskId) {
+          pendingVehicles = await query(
+            `SELECT COUNT(*) as cnt FROM vehicle_dispatches WHERE task_id = @task_id AND status = 'dispatched'`,
+            { task_id: taskId },
+          );
+        }
+        if (pendingVehicles.recordset[0].cnt === 0) {
+          await query(
+            `UPDATE rescue_requests
+             SET tracking_status = 'team_ready', updated_at = GETDATE()
+             WHERE assigned_team_id = @team_id AND status = 'assigned' AND tracking_status = 'assigned'`,
+            { team_id: row.team_id },
+          );
+          const io = req.app.get("io");
+          if (io) io.emit("team_ready", { team_id: row.team_id });
+        }
       }
 
       res.json({ message: "Đã xác nhận nhận hàng." });
@@ -1462,6 +1483,36 @@ router.put(
         `UPDATE vehicle_dispatches SET status = 'confirmed', confirmed_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`,
         { id },
       );
+
+      // Check if all supplies AND vehicles for this task are confirmed → set team_ready
+      const vdTaskInfo = await query(
+        `SELECT task_id FROM vehicle_dispatches WHERE id = @id`,
+        { id },
+      );
+      const vdTaskId = vdTaskInfo.recordset[0]?.task_id;
+      if (vdTaskId) {
+        const pendingSupplies = await query(
+          `SELECT COUNT(*) as cnt FROM relief_distributions rd
+           JOIN distribution_batches db ON rd.batch_id = db.id
+           WHERE db.task_id = @task_id AND rd.status = 'issued' AND rd.distribution_type = 'issue'`,
+          { task_id: vdTaskId },
+        );
+        const pendingVehicles = await query(
+          `SELECT COUNT(*) as cnt FROM vehicle_dispatches WHERE task_id = @task_id AND status = 'dispatched'`,
+          { task_id: vdTaskId },
+        );
+        if (pendingSupplies.recordset[0].cnt === 0 && pendingVehicles.recordset[0].cnt === 0) {
+          await query(
+            `UPDATE rescue_requests
+             SET tracking_status = 'team_ready', updated_at = GETDATE()
+             WHERE assigned_team_id = @team_id AND status = 'assigned' AND tracking_status = 'assigned'`,
+            { team_id: row.team_id },
+          );
+          const io = req.app.get("io");
+          if (io) io.emit("team_ready", { team_id: row.team_id });
+        }
+      }
+
       res.json({ message: "Đã xác nhận nhận xe." });
     } catch (err) {
       next(err);
