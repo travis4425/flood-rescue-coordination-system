@@ -65,6 +65,8 @@ router.get("/", authenticate, async (req, res, next) => {
               rr.citizen_name, rr.citizen_phone, rr.victim_count, rr.support_type,
               rr.priority_score, rr.flood_severity, rr.status as request_status,
               ISNULL(rr.tracking_status, 'submitted') as tracking_status,
+              ISNULL(rr.citizen_rescued_by_other_count, 0) as citizen_rescued_by_other_count,
+              rr.reject_reason,
               it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.code as team_code,
@@ -75,7 +77,11 @@ router.get("/", authenticate, async (req, res, next) => {
               (SELECT STRING_AGG(u2.full_name, ', ')
                FROM mission_assignments ma
                JOIN users u2 ON ma.user_id = u2.id
-               WHERE ma.mission_id = m.id) as assigned_members_names
+               WHERE ma.mission_id = m.id) as assigned_members_names,
+              CASE WHEN m.task_group_id IS NOT NULL AND (
+                EXISTS(SELECT 1 FROM distribution_batches db WHERE db.task_id = m.task_group_id)
+                OR EXISTS(SELECT 1 FROM vehicle_dispatches vd WHERE vd.task_id = m.task_group_id)
+              ) THEN 1 ELSE 0 END as has_distributions
        FROM missions m
        JOIN rescue_requests rr ON m.request_id = rr.id
        LEFT JOIN incident_types it ON rr.incident_type_id = it.id
@@ -103,9 +109,9 @@ router.get("/", authenticate, async (req, res, next) => {
 });
 
 // PUT /api/missions/:id/status - update mission status
-router.put("/:id/status", authenticate, async (req, res, next) => {
+router.put("/:id/status", authenticate, authorize("rescue_team", "coordinator"), async (req, res, next) => {
   try {
-    const { status, notes, latitude, longitude } = req.body;
+    const { status, notes, latitude, longitude, rescued_count } = req.body;
     const validStatuses = [
       "accepted",
       "en_route",
@@ -126,6 +132,10 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
     }
     if (status === "completed") {
       setClause += ", completed_at = GETDATE()";
+      if (rescued_count !== undefined) {
+        params.rescued_count = parseInt(rescued_count) || 0;
+        // Also update rescued_count on rescue_requests (done below after fetching request_id)
+      }
     }
     if (notes) {
       setClause += ", notes = @notes";
@@ -180,11 +190,13 @@ router.put("/:id/status", authenticate, async (req, res, next) => {
 
       // When completed: auto-close the request immediately (no citizen confirm needed)
       if (status === "completed") {
+        const rescuedCountVal = rescued_count !== undefined ? (parseInt(rescued_count) || 0) : null;
         await query(
           `UPDATE rescue_requests SET status = 'completed', tracking_status = 'completed',
            rescue_team_confirmed = 1, completed_at = GETDATE(), updated_at = GETDATE()
+           ${rescuedCountVal !== null ? ', rescued_count = @rc' : ''}
            WHERE id = @request_id`,
-          { request_id },
+          { request_id, ...(rescuedCountVal !== null ? { rc: rescuedCountVal } : {}) },
         );
       }
 
