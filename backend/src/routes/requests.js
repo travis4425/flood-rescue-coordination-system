@@ -364,7 +364,7 @@ router.put("/track/:trackingCode/rescued-by-other", async (req, res, next) => {
         `UPDATE rescue_requests
          SET citizen_rescued_by_other_count = @count,
              status = 'cancelled',
-             reject_reason = N'Nguoi dan bao da duoc cuu boi nguoi khac',
+             reject_reason = N'Người dân báo đã được cứu bởi người khác',
              updated_at = GETDATE()
          WHERE id = @id`,
         { count: newCount, id },
@@ -376,6 +376,31 @@ router.put("/track/:trackingCode/rescued-by-other", async (req, res, next) => {
          WHERE request_id = @req_id AND status NOT IN ('completed','failed','aborted')`,
         { req_id: id },
       );
+
+      // Check if mission belongs to a task_group → update task status if all done
+      const missionInfo = await query(
+        `SELECT task_group_id FROM missions WHERE request_id = @req_id AND task_group_id IS NOT NULL`,
+        { req_id: id },
+      );
+      if (missionInfo.recordset.length > 0) {
+        const taskGroupId = missionInfo.recordset[0].task_group_id;
+        const taskMissions = await query(
+          `SELECT status FROM missions WHERE task_group_id = @tgid`,
+          { tgid: taskGroupId },
+        );
+        const all = taskMissions.recordset;
+        const allDone = all.every(m => ['completed','aborted','failed'].includes(m.status));
+        if (allDone) {
+          const anyFailed = all.some(m => m.status === 'failed');
+          const taskStatus = anyFailed ? 'partial' : 'completed';
+          await query(
+            `UPDATE task_groups SET status = @status, updated_at = GETDATE() WHERE id = @id`,
+            { status: taskStatus, id: taskGroupId },
+          );
+          const io2 = req.app.get("io");
+          if (io2) io2.emit("task_updated", { task_group_id: taskGroupId, status: taskStatus });
+        }
+      }
 
       const io = req.app.get("io");
       if (io) {
