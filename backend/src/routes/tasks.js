@@ -48,7 +48,10 @@ router.get("/", authenticate, async (req, res, next) => {
               ISNULL(ms.completed_sub, 0) as completed_sub,
               ISNULL(ms.failed_sub, 0) as failed_sub,
               ISNULL(ir.pending_reports, 0) as pending_reports,
-              ISNULL(tgt.extra_team_count, 0) as extra_team_count
+              ISNULL(tgt.extra_team_count, 0) as extra_team_count,
+              ISNULL(cats.cuu_nan_count, 0) as cuu_nan_count,
+              ISNULL(cats.cuu_tro_count, 0) as cuu_tro_count,
+              ISNULL(cats.cuu_ho_count, 0) as cuu_ho_count
        FROM task_groups tg
        JOIN users u ON tg.coordinator_id = u.id
        LEFT JOIN rescue_teams rt ON tg.team_id = rt.id
@@ -72,6 +75,16 @@ router.get("/", authenticate, async (req, res, next) => {
          FROM task_group_teams
          GROUP BY task_group_id
        ) tgt ON tgt.task_group_id = tg.id
+       LEFT JOIN (
+         SELECT m.task_group_id,
+                SUM(CASE WHEN it.rescue_category = 'cuu_nan' THEN 1 ELSE 0 END) as cuu_nan_count,
+                SUM(CASE WHEN it.rescue_category = 'cuu_tro' THEN 1 ELSE 0 END) as cuu_tro_count,
+                SUM(CASE WHEN it.rescue_category = 'cuu_ho'  THEN 1 ELSE 0 END) as cuu_ho_count
+         FROM missions m
+         JOIN rescue_requests rr ON m.request_id = rr.id
+         LEFT JOIN incident_types it ON rr.incident_type_id = it.id
+         GROUP BY m.task_group_id
+       ) cats ON cats.task_group_id = tg.id
        ${where}
        ORDER BY ISNULL(tg.scheduled_date, CAST(tg.created_at AS DATE)), tg.created_at DESC`,
       params,
@@ -139,7 +152,8 @@ router.get(
         `SELECT TOP (@limit) rr.id, rr.tracking_code, rr.address, rr.latitude, rr.longitude,
                 rr.citizen_name, rr.victim_count, rr.status, rr.priority_score,
                 rr.flood_severity, rr.description, rr.support_type,
-                it.name as incident_type, ul.name as urgency_level, ul.color as urgency_color,
+                it.name as incident_type, it.rescue_category,
+                ul.name as urgency_level, ul.color as urgency_color,
                 p.name as province_name
          FROM rescue_requests rr
          LEFT JOIN incident_types it ON rr.incident_type_id = it.id
@@ -256,6 +270,14 @@ router.post(
           task_group_id: taskGroupId,
           team_ids: allTeamIds,
         });
+        // Notify tracking pages for each assigned request
+        for (const item of requestList) {
+          io.emit("request_updated", {
+            id: item.id,
+            status: "assigned",
+            tracking_status: "assigned",
+          });
+        }
       }
 
       res
@@ -301,7 +323,8 @@ router.get("/:id", authenticate, async (req, res, next) => {
               rr.priority_score, rr.flood_severity, rr.support_type,
               ISNULL(rr.citizen_rescued_by_other_count, 0) as citizen_rescued_by_other_count,
               rr.reject_reason,
-              it.name as incident_type, ul.name as urgency_level, ul.color as urgency_color,
+              it.name as incident_type, it.rescue_category,
+              ul.name as urgency_level, ul.color as urgency_color,
               u.full_name as assigned_to_name
        FROM missions m
        JOIN rescue_requests rr ON m.request_id = rr.id
@@ -800,9 +823,10 @@ router.put(
         { task_id: taskId },
       );
 
-      // Free rescue requests back to verified
-      await query(
-        `UPDATE rr SET rr.status = 'verified', rr.updated_at = GETDATE()
+      // Free rescue requests back to verified + reset tracking_status
+      const freedRequests = await query(
+        `UPDATE rr SET rr.status = 'verified', rr.tracking_status = 'received', rr.updated_at = GETDATE()
+         OUTPUT INSERTED.id
          FROM rescue_requests rr
          JOIN missions m ON rr.id = m.request_id
          WHERE m.task_group_id = @task_id AND rr.status = 'assigned'`,
@@ -837,6 +861,10 @@ router.put(
       if (io) {
         io.emit("task_updated", { task_group_id: taskId, status: "cancelled" });
         if (leader_id) io.to(`user_${leader_id}`).emit("notification");
+        // Notify tracking pages
+        for (const r of (freedRequests.recordset || [])) {
+          io.emit("request_updated", { id: r.id, status: "verified", tracking_status: "received" });
+        }
       }
 
       res.json({ message: "Đã hủy task." });
