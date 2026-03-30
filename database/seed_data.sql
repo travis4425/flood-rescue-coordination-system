@@ -73,14 +73,18 @@ INSERT INTO wards (id, district_id, name, code, latitude, longitude) VALUES
 SET IDENTITY_INSERT wards OFF;
 
 -- 5. INCIDENT TYPES (6)
+-- rescue_category:
+--   cuu_nan = Cứu nạn (trực tiếp cứu người bị kẹt/nguy hiểm) → cần phương tiện + vật tư y tế
+--   cuu_tro = Cứu trợ (cung cấp nhu yếu phẩm)                → cần lương thực, nước
+--   cuu_ho  = Cứu hộ  (sơ tán / y tế khẩn cấp di chuyển)    → cần xe cứu thương + đội y tế
 SET IDENTITY_INSERT incident_types ON;
-INSERT INTO incident_types (id, name, code, icon, color, description) VALUES
-  (1, N'Ngập lụt',        'flood',     'water',          '#2196F3', N'Nước dâng gây ngập'),
-  (2, N'Sạt lở đất',      'landslide', 'mountain',       '#795548', N'Sạt lở do mưa lớn'),
-  (3, N'Mắc kẹt',         'trapped',   'alert-triangle', '#FF5722', N'Người bị mắc kẹt'),
-  (4, N'Y tế khẩn cấp',   'medical',   'heart',          '#F44336', N'Cần hỗ trợ y tế'),
-  (5, N'Thiếu lương thực','supplies',  'package',        '#FF9800', N'Cần lương thực, nước'),
-  (6, N'Sơ tán',          'evacuation','move',           '#9C27B0', N'Cần di dời khẩn cấp');
+INSERT INTO incident_types (id, name, code, icon, color, description, rescue_category) VALUES
+  (1, N'Ngập lụt',        'flood',     'water',          '#2196F3', N'Nước dâng gây ngập, người bị mắc kẹt',          'cuu_nan'),
+  (2, N'Sạt lở đất',      'landslide', 'mountain',       '#795548', N'Sạt lở do mưa lớn, người/tài sản bị vùi lấp',   'cuu_nan'),
+  (3, N'Mắc kẹt',         'trapped',   'alert-triangle', '#FF5722', N'Người bị mắc kẹt, cần giải cứu trực tiếp',      'cuu_nan'),
+  (4, N'Y tế khẩn cấp',   'medical',   'heart',          '#F44336', N'Người bị thương/bệnh nặng cần sơ cứu tại chỗ',  'cuu_nan'),
+  (5, N'Thiếu lương thực','supplies',  'package',        '#FF9800', N'Cần lương thực, nước uống, nhu yếu phẩm',        'cuu_tro'),
+  (6, N'Sơ tán',          'evacuation','move',           '#9C27B0', N'Cần di dời người dân ra khỏi vùng nguy hiểm',    'cuu_ho');
 SET IDENTITY_INSERT incident_types OFF;
 
 -- 6. URGENCY LEVELS (5)
@@ -209,40 +213,67 @@ INSERT INTO warehouses (id, name, address, province_id, district_id, latitude, l
   (6, N'Kho Vệ Tinh Bà Rịa-VT',  N'20 Trương Công Định, TP Bà Rịa',           6, 20, 10.4993, 107.1745,  50.0, NULL, 9,  '0900200006', 'satellite', 'active');
 SET IDENTITY_INSERT warehouses OFF;
 
--- 13. RELIEF ITEMS (8)
+-- 13. RELIEF ITEMS (16)
+-- category  : nhóm vật chất (food, water, medical, equipment, shelter, fuel)
+-- rescue_category: loại cứu hộ phù hợp để hệ thống tự gợi ý
+--   cuu_nan = Cứu nạn  → vật tư y tế + thiết bị trực tiếp cứu người
+--   cuu_tro = Cứu trợ  → lương thực, nước, nhu yếu phẩm
+--   cuu_ho  = Cứu hộ   → sơ tán, di chuyển, y tế cơ bản
+--   all     = Dùng được cho mọi loại (xăng, áo phao...)
 SET IDENTITY_INSERT relief_items ON;
-INSERT INTO relief_items (id, name, category, unit, description) VALUES
-  (1, N'Gạo',            'food',      'kg',    N'Gạo tẻ đóng bao 50kg'),
-  (2, N'Mì tôm',         'food',      'box',   N'Mì ăn liền (30 gói/thùng)'),
-  (3, N'Nước uống',      'water',     'liter', N'Nước đóng chai 500ml'),
-  (4, N'Thuốc sát trùng','medical',   'box',   N'Kit y tế cơ bản'),
-  (5, N'Chăn mền',       'shelter',   'piece', N'Chăn ấm cứu trợ'),
-  (6, N'Áo phao',        'equipment', 'piece', N'Áo phao cứu sinh'),
-  (7, N'Bạt che mưa',    'shelter',   'piece', N'Bạt nhựa che mưa 4x6m'),
-  (8, N'Xăng dầu',       'fuel',      'liter', N'Xăng cho xuồng cứu hộ');
+INSERT INTO relief_items (id, name, category, unit, description, rescue_category) VALUES
+  -- ── CỨU TRỢ: lương thực / nhu yếu phẩm ──────────────────────────────────
+  (1,  N'Gạo',               'food',      'kg',    N'Gạo tẻ đóng bao 50kg',                       'cuu_tro'),
+  (2,  N'Mì tôm',            'food',      'box',   N'Mì ăn liền (30 gói/thùng)',                   'cuu_tro'),
+  (3,  N'Nước uống',         'water',     'thùng', N'Nước đóng chai 500ml',                        'cuu_tro'),
+  (5,  N'Chăn mền',          'shelter',   'piece', N'Chăn ấm cứu trợ',                             'cuu_tro'),
+  (7,  N'Bạt che mưa',       'shelter',   'piece', N'Bạt nhựa che mưa 4x6m',                      'cuu_tro'),
+  (9,  N'Đồ hộp thực phẩm', 'food',      'box',   N'Thực phẩm đóng hộp dự trữ',                   'cuu_tro'),
+  (10, N'Quần áo khô',       'shelter',   'set',   N'Bộ quần áo khô thay thế',                     'cuu_tro'),
+  -- ── CỨU NẠN: vật tư y tế + thiết bị ─────────────────────────────────────
+  (4,  N'Thuốc sát trùng',   'medical',   'box',   N'Kit thuốc y tế cơ bản',                       'cuu_nan'),
+  (11, N'Bông băng y tế',    'medical',   'set',   N'Bộ bông băng cứu thương',                     'cuu_nan'),
+  (12, N'Túi y tế khẩn cấp', 'medical',   'bag',   N'Túi sơ cứu khẩn cấp đầy đủ dụng cụ',         'cuu_nan'),
+  (13, N'Cáng cứu thương',   'equipment', 'piece', N'Cáng gấp vải di chuyển nạn nhân',             'cuu_nan'),
+  (14, N'Dây cứu sinh',      'equipment', 'piece', N'Dây thừng cứu sinh 20m',                      'cuu_nan'),
+  -- ── CỨU HỘ: sơ tán / di chuyển y tế ────────────────────────────────────
+  (15, N'Xe lăn',            'medical',   'piece', N'Xe lăn hỗ trợ người già / thương tích',       'cuu_ho'),
+  -- ── DÙNG CHUNG ──────────────────────────────────────────────────────────
+  (6,  N'Áo phao',           'equipment', 'piece', N'Áo phao cứu sinh',                            'all'),
+  (8,  N'Xăng dầu',          'fuel',      'liter', N'Xăng cho xuồng cứu hộ',                      'all'),
+  (16, N'Máy bơm nước',      'equipment', 'piece', N'Máy bơm xử lý ngập nước',                    'all');
 SET IDENTITY_INSERT relief_items OFF;
 
 -- 14. RELIEF INVENTORY
 INSERT INTO relief_inventory (warehouse_id, item_id, quantity, unit, min_threshold) VALUES
-  -- Kho tổng HCM (đủ hàng)
-  (1,1,10000,'kg',2000), (1,2,500,'box',100), (1,3,8000,'liter',1000),
-  (1,4,200,'box',30),    (1,5,800,'piece',100),(1,6,400,'piece',50),
-  (1,7,300,'piece',40),  (1,8,2000,'liter',500),
+  -- Kho tổng HCM (đủ hàng - cả cứu trợ lẫn y tế)
+  (1,1,10000,'kg',2000),  (1,2,500,'box',100),   (1,3,8000,'thùng',1000),
+  (1,4,200,'box',30),     (1,5,800,'piece',100),  (1,6,400,'piece',50),
+  (1,7,300,'piece',40),   (1,8,2000,'liter',500),
+  (1,9,300,'box',40),     (1,10,400,'set',50),
+  -- Vật tư y tế/cứu hộ tại kho tổng HCM
+  (1,11,300,'set',30),    (1,12,150,'bag',20),    (1,13,50,'piece',10),
+  (1,14,80,'piece',15),   (1,15,20,'piece',5),    (1,16,15,'piece',3),
   -- Kho VS Bình Dương
-  (2,1,2000,'kg',400),   (2,2,100,'box',20),  (2,3,1500,'liter',300),
-  (2,4,40,'box',10),     (2,6,80,'piece',20), (2,8,500,'liter',100),
+  (2,1,2000,'kg',400),    (2,2,100,'box',20),     (2,3,1500,'thùng',300),
+  (2,4,40,'box',10),      (2,6,80,'piece',20),    (2,8,500,'liter',100),
+  (2,11,60,'set',10),     (2,12,30,'bag',5),      (2,13,12,'piece',3),
   -- Kho VS Đồng Nai
-  (3,1,2000,'kg',400),   (3,2,80,'box',20),   (3,3,1200,'liter',300),
-  (3,6,60,'piece',20),   (3,8,400,'liter',100),
+  (3,1,2000,'kg',400),    (3,2,80,'box',20),      (3,3,1200,'thùng',300),
+  (3,6,60,'piece',20),    (3,8,400,'liter',100),
+  (3,11,50,'set',8),      (3,12,25,'bag',5),
   -- Kho VS Long An (vùng ngập nên tồn kho cao hơn)
-  (4,1,3000,'kg',500),   (4,2,120,'box',30),  (4,3,2000,'liter',400),
-  (4,4,50,'box',10),     (4,6,100,'piece',30),(4,8,600,'liter',150),
+  (4,1,3000,'kg',500),    (4,2,120,'box',30),     (4,3,2000,'thùng',400),
+  (4,4,50,'box',10),      (4,6,100,'piece',30),   (4,8,600,'liter',150),
+  (4,9,120,'box',20),     (4,10,100,'set',15),
+  (4,11,80,'set',10),     (4,12,40,'bag',5),      (4,13,15,'piece',3),
+  (4,14,20,'piece',5),
   -- Kho VS Tây Ninh
-  (5,1,1500,'kg',300),   (5,3,800,'liter',200),(5,6,40,'piece',15),
-  (5,8,300,'liter',80),
+  (5,1,1500,'kg',300),    (5,3,800,'thùng',200),  (5,6,40,'piece',15),
+  (5,8,300,'liter',80),   (5,11,30,'set',5),
   -- Kho VS Bà Rịa-VT
-  (6,1,1500,'kg',300),   (6,3,1000,'liter',200),(6,6,50,'piece',15),
-  (6,8,400,'liter',100);
+  (6,1,1500,'kg',300),    (6,3,1000,'thùng',200), (6,6,50,'piece',15),
+  (6,8,400,'liter',100),  (6,11,30,'set',5),      (6,12,15,'bag',3);
 
 -- 15. WEATHER ALERTS (3)
 INSERT INTO weather_alerts (province_id, alert_type, severity, title, description, starts_at, expires_at, source) VALUES
