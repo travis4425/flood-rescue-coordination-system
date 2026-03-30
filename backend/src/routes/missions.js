@@ -67,7 +67,7 @@ router.get("/", authenticate, async (req, res, next) => {
               ISNULL(rr.tracking_status, 'submitted') as tracking_status,
               ISNULL(rr.citizen_rescued_by_other_count, 0) as citizen_rescued_by_other_count,
               rr.reject_reason,
-              it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
+              it.name as incident_type, it.icon as incident_icon, it.color as incident_color, it.rescue_category,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.code as team_code,
               v.name as vehicle_name, v.plate_number,
@@ -122,6 +122,46 @@ router.put("/:id/status", authenticate, authorize("rescue_team", "coordinator"),
     ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: "Trạng thái không hợp lệ." });
+    }
+
+    // rescue_team chỉ được cập nhật mission thuộc đội mình
+    if (req.user.role === "rescue_team") {
+      const missionCheck = await query(
+        `SELECT m.id FROM missions m
+         JOIN rescue_teams rt ON m.team_id = rt.id
+         WHERE m.id = @id AND (
+           rt.leader_id = @uid
+           OR EXISTS (SELECT 1 FROM rescue_team_members WHERE team_id = m.team_id AND user_id = @uid)
+         )`,
+        { id: parseInt(req.params.id), uid: req.user.id },
+      );
+      if (!missionCheck.recordset.length) {
+        return res.status(403).json({ error: "Bạn không có quyền cập nhật nhiệm vụ này." });
+      }
+    }
+
+    // Block accept for cuu_tro/cuu_ho if coordinator hasn't dispatched resources yet
+    if (status === "accepted") {
+      const categoryCheck = await query(
+        `SELECT it.rescue_category, rr.tracking_status
+         FROM missions m
+         JOIN rescue_requests rr ON m.request_id = rr.id
+         LEFT JOIN incident_types it ON rr.incident_type_id = it.id
+         WHERE m.id = @id`,
+        { id: parseInt(req.params.id) },
+      );
+      if (categoryCheck.recordset[0]) {
+        const { rescue_category, tracking_status } = categoryCheck.recordset[0];
+        if (
+          ["cuu_tro", "cuu_ho"].includes(rescue_category) &&
+          tracking_status !== "team_ready"
+        ) {
+          return res.status(400).json({
+            error:
+              "Nhiệm vụ này cần coordinator phân phát vật tư/phương tiện trước. Vui lòng chờ xác nhận.",
+          });
+        }
+      }
     }
 
     let setClause = "status = @status, updated_at = GETDATE()";
@@ -330,9 +370,20 @@ router.put("/:id/status", authenticate, authorize("rescue_team", "coordinator"),
             : status === "aborted" || status === "failed"
             ? "cancelled"
             : undefined;
+        const trackingStatusUpdate =
+          status === "accepted"
+            ? "en_route"
+            : status === "en_route" || status === "on_scene"
+            ? "en_route"
+            : status === "completed"
+            ? "completed"
+            : status === "failed"
+            ? "incident_reported"
+            : undefined;
         io.emit("request_updated", {
           id: request_id,
           ...(requestStatus && { status: requestStatus }),
+          ...(trackingStatusUpdate && { tracking_status: trackingStatusUpdate }),
           rescue_team_confirmed: status === "completed" ? true : undefined,
         });
       }
@@ -420,6 +471,19 @@ router.put(
       }
 
       const { request_id, team_id } = mission.recordset[0];
+
+      // Verify user belongs to the mission's team (leader or member)
+      if (req.user.role === "rescue_team") {
+        const teamCheck = await query(
+          `SELECT 1 FROM rescue_teams WHERE id = @team_id AND leader_id = @uid
+           UNION
+           SELECT 1 FROM rescue_team_members WHERE team_id = @team_id AND user_id = @uid`,
+          { team_id, uid: req.user.id },
+        );
+        if (!teamCheck.recordset.length) {
+          return res.status(403).json({ error: "Bạn không thuộc đội thực hiện nhiệm vụ này." });
+        }
+      }
 
       // Update request with result
       await query(
