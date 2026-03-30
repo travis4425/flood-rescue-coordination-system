@@ -104,6 +104,12 @@ CREATE TABLE incident_types (
     icon VARCHAR(50),
     color VARCHAR(20),
     description NVARCHAR(500),
+    -- rescue_category: phân loại loại sự cố để coordinator biết điều phối gì
+    -- cuu_nan  = Cứu nạn: người bị kẹt/nguy hiểm → cần phương tiện + vật tư y tế
+    -- cuu_tro  = Cứu trợ: cần lương thực/nước/nhu yếu phẩm
+    -- cuu_ho   = Cứu hộ: sơ tán/y tế khẩn cấp → cần đội y tế + xe cứu thương
+    rescue_category VARCHAR(20) NOT NULL DEFAULT 'cuu_nan'
+        CHECK (rescue_category IN ('cuu_nan', 'cuu_tro', 'cuu_ho')),
     is_active BIT DEFAULT 1,
     created_at DATETIME2 DEFAULT GETDATE()
 );
@@ -310,9 +316,17 @@ ALTER TABLE vehicles ADD CONSTRAINT fk_vehicles_warehouse
 CREATE TABLE relief_items (
     id INT IDENTITY(1,1) PRIMARY KEY,
     name NVARCHAR(100) NOT NULL,
+    -- category: food | water | medical | equipment | shelter | fuel
     category VARCHAR(50),
     unit VARCHAR(20),
     description NVARCHAR(500),
+    -- rescue_category: vật tư này dùng cho loại cứu hộ nào
+    --   cuu_nan  = Cứu nạn (y tế, thiết bị trực tiếp cứu người)
+    --   cuu_tro  = Cứu trợ (lương thực, nước, nhu yếu phẩm)
+    --   cuu_ho   = Cứu hộ  (sơ tán, di chuyển y tế)
+    --   all      = Dùng cho mọi loại (xăng dầu, áo phao...)
+    rescue_category VARCHAR(20) NOT NULL DEFAULT 'all'
+        CHECK (rescue_category IN ('cuu_nan', 'cuu_tro', 'cuu_ho', 'all')),
     created_at DATETIME2 DEFAULT GETDATE()
 );
 
@@ -424,6 +438,19 @@ CREATE INDEX idx_task_groups_status ON task_groups(status);
 -- Add FK from missions.task_group_id -> task_groups
 ALTER TABLE missions ADD CONSTRAINT fk_missions_task_group
     FOREIGN KEY (task_group_id) REFERENCES task_groups(id);
+
+-- *19b. TASK_GROUP_TEAMS (Các đội tham gia vào 1 task)
+-- is_primary = 1: đội chủ lực (tg.team_id), 0: đội hỗ trợ thêm
+CREATE TABLE task_group_teams (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    task_group_id   INT NOT NULL REFERENCES task_groups(id) ON DELETE CASCADE,
+    team_id         INT NOT NULL REFERENCES rescue_teams(id),
+    is_primary      BIT NOT NULL DEFAULT 0,
+    added_at        DATETIME2 DEFAULT GETDATE(),
+    CONSTRAINT uq_task_team UNIQUE (task_group_id, team_id)
+);
+CREATE INDEX idx_task_group_teams_task ON task_group_teams(task_group_id);
+CREATE INDEX idx_task_group_teams_team ON task_group_teams(team_id);
 
 -- *20. TASK INCIDENT REPORTS (Bao cao su co tu member/leader)
 
