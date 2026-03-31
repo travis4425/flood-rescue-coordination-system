@@ -476,6 +476,18 @@ router.post(
           return res
             .status(403)
             .json({ error: "Bạn chỉ được xuất từ kho trong tỉnh của mình." });
+
+        // Coordinator chỉ được cấp phát cho team trong tỉnh mình
+        const teamCheck = await query(
+          `SELECT 1 FROM rescue_teams rt
+           JOIN coordinator_regions cr ON rt.province_id = cr.province_id
+           WHERE rt.id = @tid AND cr.user_id = @uid`,
+          { tid: parseInt(team_id), uid: req.user.id },
+        );
+        if (!teamCheck.recordset.length)
+          return res
+            .status(403)
+            .json({ error: "Bạn chỉ được cấp phát cho đội trong tỉnh của mình." });
       }
 
       const inv = await query(
@@ -550,6 +562,16 @@ router.post(
         );
         if (!allowed.recordset.length)
           return res.status(403).json({ error: "Bạn chỉ được xuất từ kho trong tỉnh của mình." });
+
+        // Coordinator chỉ được cấp phát cho team trong tỉnh mình
+        const teamCheck = await query(
+          `SELECT 1 FROM rescue_teams rt
+           JOIN coordinator_regions cr ON rt.province_id = cr.province_id
+           WHERE rt.id = @tid AND cr.user_id = @uid`,
+          { tid: parseInt(team_id), uid: req.user.id },
+        );
+        if (!teamCheck.recordset.length)
+          return res.status(403).json({ error: "Bạn chỉ được cấp phát cho đội trong tỉnh của mình." });
       }
 
       // Kiểm tra tồn kho đủ cho tất cả items trước khi trừ
@@ -773,14 +795,20 @@ router.put(
           );
         }
         if (pendingVehicles.recordset[0].cnt === 0) {
-          await query(
+          const teamReadyResult = await query(
             `UPDATE rescue_requests
              SET tracking_status = 'team_ready', updated_at = GETDATE()
+             OUTPUT INSERTED.id
              WHERE assigned_team_id = @team_id AND status = 'assigned' AND tracking_status = 'assigned'`,
             { team_id: row.team_id },
           );
           const io = req.app.get("io");
-          if (io) io.emit("team_ready", { team_id: row.team_id });
+          if (io) {
+            io.emit("team_ready", { team_id: row.team_id });
+            for (const r of teamReadyResult.recordset) {
+              io.emit("request_updated", { id: r.id, tracking_status: "team_ready" });
+            }
+          }
         }
       }
 
@@ -871,6 +899,17 @@ router.put(
           error: `Số lượng trả không được vượt quá số đã nhận (${row.quantity}).`,
         });
 
+      // Block return if team still has active (non-completed) missions
+      const activeMissions = await query(
+        `SELECT COUNT(*) as cnt FROM missions
+         WHERE team_id = @team_id AND status NOT IN ('completed','aborted','failed')`,
+        { team_id: row.team_id },
+      );
+      if (activeMissions.recordset[0].cnt > 0)
+        return res.status(400).json({
+          error: "Không thể trả hàng khi đội vẫn còn nhiệm vụ đang thực hiện.",
+        });
+
       await query(
         `UPDATE relief_distributions
          SET status = 'return_requested',
@@ -946,8 +985,12 @@ router.put(
         { id, status: newStatus, qty: actualQty, uid: req.user.id },
       );
 
+      const io = req.app.get("io");
+      if (io) io.emit("distribution_return_confirmed", { id, status: newStatus });
+
       res.json({
         message: `Đã xác nhận nhận lại ${actualQty} đơn vị. Tồn kho đã cộng.`,
+        status: newStatus,
       });
     } catch (err) {
       next(err);
@@ -989,7 +1032,7 @@ router.get(
        LEFT JOIN rescue_teams rt ON vr.destination_team_id = rt.id
        LEFT JOIN provinces p ON vr.province_id = p.id
        LEFT JOIN users approver ON vr.approved_by = approver.id
-       LEFT JOIN warehouses w ON w.coordinator_id = vr.requested_by
+       LEFT JOIN warehouses w ON w.id = (SELECT TOP 1 id FROM warehouses WHERE coordinator_id = vr.requested_by ORDER BY id)
        ${where}
        ORDER BY vr.created_at DESC`,
         params,
@@ -1369,6 +1412,100 @@ router.post(
   },
 );
 
+// PUT /api/resources/vehicle-dispatches/:id/reassign — Gán xe đang dùng sang task khác (cùng team)
+// Dùng khi đội cứu hộ dùng xe liên tiếp nhiều task mà không cần trả-rồi-mượn lại
+router.put(
+  "/vehicle-dispatches/:id/reassign",
+  authenticate,
+  authorize("coordinator", "manager"),
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { task_id, mission_note } = req.body;
+
+      if (!task_id)
+        return res.status(400).json({ error: "Thiếu task_id mới cần gán." });
+
+      // Lấy thông tin dispatch hiện tại
+      const vd = await query(
+        `SELECT vd.id, vd.status, vd.team_id, vd.vehicle_id, vd.task_id as current_task_id,
+                v.province_id
+         FROM vehicle_dispatches vd
+         JOIN vehicles v ON vd.vehicle_id = v.id
+         WHERE vd.id = @id`,
+        { id },
+      );
+      if (!vd.recordset.length)
+        return res.status(404).json({ error: "Không tìm thấy điều xe." });
+
+      const dispatch = vd.recordset[0];
+
+      // Chỉ cho phép reassign khi xe đang được xác nhận (đội đã nhận xe)
+      if (!["confirmed", "dispatched"].includes(dispatch.status))
+        return res.status(400).json({
+          error: "Chỉ có thể gán lại xe khi đội đang giữ xe (đã xác nhận hoặc đang điều).",
+        });
+
+      // Kiểm tra task_id mới có thuộc cùng team không
+      const taskCheck = await query(
+        `SELECT id FROM task_groups WHERE id = @task_id AND team_id = @team_id`,
+        { task_id: parseInt(task_id), team_id: dispatch.team_id },
+      );
+      if (!taskCheck.recordset.length) {
+        // Cũng check trong task_group_teams (multi-team task)
+        const taskCheck2 = await query(
+          `SELECT 1 FROM task_group_teams WHERE task_group_id = @task_id AND team_id = @team_id`,
+          { task_id: parseInt(task_id), team_id: dispatch.team_id },
+        );
+        if (!taskCheck2.recordset.length)
+          return res.status(400).json({
+            error: "Task mới không thuộc đội này.",
+          });
+      }
+
+      // Cập nhật task_id và ghi chú (nếu có)
+      await query(
+        `UPDATE vehicle_dispatches
+         SET task_id = @task_id,
+             mission_note = COALESCE(@note, mission_note),
+             updated_at = GETDATE()
+         WHERE id = @id`,
+        { task_id: parseInt(task_id), note: mission_note || null, id },
+      );
+
+      // Cập nhật team_ready cho task mới nếu tất cả điều kiện đã đủ
+      const pendingSupplies = await query(
+        `SELECT COUNT(*) as cnt FROM distribution_batches
+         WHERE task_id = @task_id AND status = 'issued'`,
+        { task_id: parseInt(task_id) },
+      );
+      const io = req.app.get("io");
+      if (pendingSupplies.recordset[0].cnt === 0) {
+        const teamReadyResult = await query(
+          `UPDATE rescue_requests
+           SET tracking_status = 'team_ready', updated_at = GETDATE()
+           OUTPUT INSERTED.id
+           WHERE assigned_team_id = @team_id
+             AND status = 'assigned'
+             AND tracking_status = 'assigned'`,
+          { team_id: dispatch.team_id },
+        );
+        if (io) {
+          for (const r of teamReadyResult.recordset) {
+            io.emit("request_updated", { id: r.id, tracking_status: "team_ready" });
+          }
+        }
+      }
+
+      if (io) io.emit("vehicle_dispatch_reassigned", { id, new_task_id: parseInt(task_id) });
+
+      res.json({ message: "Đã gán lại xe sang task mới thành công." });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // PUT /api/resources/vehicle-dispatches/:id/cancel — Huỷ điều xe (chưa có kho xác nhận bàn giao)
 router.put(
   "/vehicle-dispatches/:id/cancel",
@@ -1436,6 +1573,8 @@ router.put(
          warehouse_confirmed_by = @uid, updated_at = GETDATE() WHERE id = @id`,
         { id, uid: req.user.id },
       );
+      const ioWC = req.app.get("io");
+      if (ioWC) ioWC.emit("vehicle_dispatch_updated", { id, warehouse_confirmed: 1 });
       res.json({
         message: "Đã xác nhận bàn giao xe. Đội cứu hộ có thể xác nhận nhận xe.",
       });
@@ -1483,6 +1622,8 @@ router.put(
         `UPDATE vehicle_dispatches SET status = 'confirmed', confirmed_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`,
         { id },
       );
+      const ioTC = req.app.get("io");
+      if (ioTC) ioTC.emit("vehicle_dispatch_updated", { id, status: "confirmed" });
 
       // Check if all supplies AND vehicles for this task are confirmed → set team_ready
       const vdTaskInfo = await query(
@@ -1502,14 +1643,20 @@ router.put(
           { task_id: vdTaskId },
         );
         if (pendingSupplies.recordset[0].cnt === 0 && pendingVehicles.recordset[0].cnt === 0) {
-          await query(
+          const teamReadyResult = await query(
             `UPDATE rescue_requests
              SET tracking_status = 'team_ready', updated_at = GETDATE()
+             OUTPUT INSERTED.id
              WHERE assigned_team_id = @team_id AND status = 'assigned' AND tracking_status = 'assigned'`,
             { team_id: row.team_id },
           );
           const io = req.app.get("io");
-          if (io) io.emit("team_ready", { team_id: row.team_id });
+          if (io) {
+            io.emit("team_ready", { team_id: row.team_id });
+            for (const r of teamReadyResult.recordset) {
+              io.emit("request_updated", { id: r.id, tracking_status: "team_ready" });
+            }
+          }
         }
       }
 
@@ -1607,6 +1754,9 @@ router.put(
         "UPDATE vehicles SET status = 'available', updated_at = GETDATE() WHERE id = @id",
         { id: row.vehicle_id },
       );
+
+      const io = req.app.get("io");
+      if (io) io.emit("vehicle_dispatch_returned", { id, vehicle_id: row.vehicle_id });
 
       res.json({
         message: "Đã xác nhận nhận lại xe. Xe trở về trạng thái sẵn sàng.",
@@ -2471,7 +2621,10 @@ router.get(
              'issue' as direction,
              CONCAT('XE-', FORMAT(vd.id, '0000')) as voucher_code,
              1 as quantity,
-             vd.status,
+             CASE
+               WHEN vd.status = 'cancelled' AND vd.return_confirmed_at IS NOT NULL THEN 'returned'
+               ELSE vd.status
+             END as status,
              vd.created_at as event_time,
              v.name as item_name,
              v.plate_number as unit,
@@ -2488,7 +2641,39 @@ router.get(
         vdRows = vdResult.recordset;
       }
 
-      const combined = [...distResult.recordset, ...vdRows].sort(
+      // Import receipts from supply_requests (nhập kho)
+      let importRows = [];
+      if (!type || type === "import") {
+        let importWhere = "WHERE sr.status = 'approved'";
+        if (warehouse_id) {
+          importWhere += " AND sr.warehouse_id = @warehouse_id";
+        }
+        if (date_from) importWhere += " AND sr.created_at >= @date_from";
+        if (date_to) importWhere += " AND sr.created_at <= @date_to";
+        const importResult = await query(
+          `SELECT
+             'import' as record_type,
+             'import' as direction,
+             CONCAT('SR-', FORMAT(sr.id, '0000')) as voucher_code,
+             sr.requested_quantity as quantity,
+             sr.status,
+             sr.created_at as event_time,
+             ri.name as item_name,
+             ri.unit,
+             NULL as team_name,
+             w.name as warehouse_name,
+             u.full_name as handled_by
+           FROM supply_requests sr
+           JOIN relief_items ri ON sr.item_id = ri.id
+           LEFT JOIN warehouses w ON sr.warehouse_id = w.id
+           LEFT JOIN users u ON sr.approved_by = u.id
+           ${importWhere}`,
+          params,
+        );
+        importRows = importResult.recordset;
+      }
+
+      const combined = [...distResult.recordset, ...vdRows, ...importRows].sort(
         (a, b) => new Date(b.event_time) - new Date(a.event_time),
       );
 
