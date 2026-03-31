@@ -2,6 +2,14 @@ const router = require("express").Router();
 const { query } = require("../config/database");
 const { authenticate, authorize } = require("../middlewares/auth");
 
+// GET /api/regions — List all regions
+router.get("/", async (req, res, next) => {
+  try {
+    const result = await query("SELECT * FROM regions ORDER BY id");
+    res.json(result.recordset);
+  } catch (err) { next(err); }
+});
+
 // GET /api/regions/provinces
 router.get("/provinces", async (req, res, next) => {
   try {
