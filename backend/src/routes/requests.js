@@ -254,7 +254,7 @@ router.get("/track/:trackingCode", async (req, res, next) => {
               rr.result_notes, rr.rescued_count, rr.reject_reason,
               ISNULL(rr.tracking_status, 'submitted') as tracking_status,
               rr.incident_report_note, rr.incident_team_info,
-              it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
+              it.name as incident_type, it.rescue_category, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name, rt.phone as team_phone,
               COALESCE(p.name, rr.geo_province_name) as province_name,
@@ -526,7 +526,7 @@ router.get("/map", async (req, res, next) => {
               rr.status, rr.victim_count, rr.priority_score, rr.flood_severity,
               rr.citizen_address, rr.description, rr.created_at,
               rr.citizen_name, rr.citizen_phone,
-              it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
+              it.name as incident_type, it.rescue_category, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               COALESCE(p.name, rr.geo_province_name) as province_name,
               COALESCE(d.name, rr.geo_district_name) as district_name
@@ -553,7 +553,7 @@ router.get("/map", async (req, res, next) => {
 router.get("/", authenticate, async (req, res, next) => {
   try {
     const { page, limit, offset } = getPagination(req.query);
-    const { status, province_id, urgency_level_id, search, district_id } =
+    const { status, province_id, urgency_level_id, search, district_id, rescue_category } =
       req.query;
 
     let where = "WHERE 1=1";
@@ -596,16 +596,22 @@ router.get("/", authenticate, async (req, res, next) => {
         " AND (rr.tracking_code LIKE @search OR rr.citizen_name LIKE @search OR rr.citizen_phone LIKE @search OR rr.description LIKE @search)";
       params.search = `%${search}%`;
     }
+    if (rescue_category) {
+      where += " AND it.rescue_category = @rescue_category";
+      params.rescue_category = rescue_category;
+    }
 
     const countResult = await query(
-      `SELECT COUNT(*) as total FROM rescue_requests rr ${where}`,
+      `SELECT COUNT(*) as total FROM rescue_requests rr
+       LEFT JOIN incident_types it ON rr.incident_type_id = it.id
+       ${where}`,
       params,
     );
     const total = countResult.recordset[0].total;
 
     const result = await query(
       `SELECT rr.*,
-              it.name as incident_type, it.icon as incident_icon, it.color as incident_color,
+              it.name as incident_type, it.rescue_category, it.icon as incident_icon, it.color as incident_color,
               ul.name as urgency_level, ul.color as urgency_color,
               rt.name as team_name,
               p.name as province_name, d.name as district_name,
@@ -864,7 +870,6 @@ router.put("/:id/status", authenticate, authorize("rescue_team", "coordinator"),
       return res.status(400).json({ error: "Trạng thái không hợp lệ." });
     }
 
-    const updates = { status, updated_at: "GETDATE()" };
     let setClause = "status = @status, updated_at = GETDATE()";
     const params = { id: parseInt(req.params.id), status };
 
