@@ -523,7 +523,8 @@ router.get("/map", async (req, res, next) => {
 
     const result = await query(
       `SELECT rr.id, rr.tracking_code, rr.latitude, rr.longitude,
-              rr.status, rr.victim_count, rr.priority_score, rr.flood_severity,
+              rr.status, ISNULL(rr.tracking_status, 'submitted') as tracking_status,
+              rr.victim_count, rr.priority_score, rr.flood_severity,
               rr.citizen_address, rr.description, rr.created_at,
               rr.citizen_name, rr.citizen_phone,
               it.name as incident_type, it.rescue_category, it.icon as incident_icon, it.color as incident_color,
