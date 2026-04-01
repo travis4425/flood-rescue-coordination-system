@@ -25,15 +25,33 @@ INSERT INTO provinces (id, region_id, name, code, latitude, longitude) VALUES
   (6, 1, N'Bà Rịa-Vũng Tàu',  'brvt',      10.5417, 107.2431);
 SET IDENTITY_INSERT provinces OFF;
 
--- 3. DISTRICTS (23 quận/huyện)
+-- 3. DISTRICTS (41 quận/huyện)
 SET IDENTITY_INSERT districts ON;
 INSERT INTO districts (id, province_id, name, code, latitude, longitude) VALUES
-  -- TP.HCM (province_id=1)
-  (1,  1, N'Quận Bình Thạnh',  'binh-thanh',  10.8069, 106.7143),
-  (2,  1, N'Quận 1',           'quan-1',       10.7769, 106.7009),
-  (3,  1, N'Quận 7',           'quan-7',       10.7369, 106.7185),
-  (4,  1, N'Huyện Bình Chánh', 'binh-chanh',   10.6886, 106.5735),
-  (5,  1, N'Huyện Nhà Bè',     'nha-be',       10.6877, 106.7345),
+  -- TP.HCM (province_id=1) — 22 quận/huyện
+  (1,  1, N'Quận Bình Thạnh',  'binh-thanh',   10.8069, 106.7143),
+  (2,  1, N'Quận 1',           'quan-1',        10.7769, 106.7009),
+  (3,  1, N'Quận 7',           'quan-7',        10.7369, 106.7185),
+  (4,  1, N'Huyện Bình Chánh', 'binh-chanh',    10.6886, 106.5735),
+  (5,  1, N'Huyện Nhà Bè',     'nha-be',        10.6877, 106.7345),
+  (24, 1, N'Quận 2',           'quan-2',        10.7870, 106.7518),
+  (25, 1, N'Quận 3',           'quan-3',        10.7797, 106.6863),
+  (26, 1, N'Quận 4',           'quan-4',        10.7577, 106.7025),
+  (27, 1, N'Quận 5',           'quan-5',        10.7551, 106.6626),
+  (28, 1, N'Quận 6',           'quan-6',        10.7465, 106.6354),
+  (29, 1, N'Quận 8',           'quan-8',        10.7230, 106.6284),
+  (30, 1, N'Quận 9',           'quan-9',        10.8418, 106.7924),
+  (31, 1, N'Quận 10',          'quan-10',       10.7727, 106.6680),
+  (32, 1, N'Quận 11',          'quan-11',       10.7627, 106.6502),
+  (33, 1, N'Quận 12',          'quan-12',       10.8680, 106.6605),
+  (34, 1, N'Quận Gò Vấp',      'go-vap',        10.8384, 106.6655),
+  (35, 1, N'Quận Phú Nhuận',   'phu-nhuan',     10.7994, 106.6844),
+  (36, 1, N'Quận Tân Bình',    'tan-binh',      10.8018, 106.6524),
+  (37, 1, N'Quận Tân Phú',     'tan-phu',       10.7937, 106.6268),
+  (38, 1, N'Quận Thủ Đức',     'thu-duc',       10.8548, 106.7570),
+  (39, 1, N'Huyện Cần Giờ',    'can-gio',       10.4117, 106.9524),
+  (40, 1, N'Huyện Củ Chi',     'cu-chi',        11.0048, 106.4892),
+  (41, 1, N'Huyện Hóc Môn',    'hoc-mon',       10.8905, 106.5957),
   -- Bình Dương (province_id=2)
   (6,  2, N'TP Thủ Dầu Một',   'thu-dau-mot',  11.1353, 106.6583),
   (7,  2, N'TX Thuận An',      'thuan-an',     10.9982, 106.6944),
@@ -461,10 +479,12 @@ UPDATE coordinator_regions SET current_workload = 4 WHERE user_id = 7;
 
 -- ============================================================
 -- SUMMARY
--- Regions: 1  | Provinces: 6  | Districts: 23 | Wards: 8
+-- Regions: 1  | Provinces: 6  | Districts: 41 | Wards: 8
+--   HCM: 23 quận/huyện đầy đủ (id 1-5, 24-41)
+--   Bình Dương: 4 | Đồng Nai: 3 | Long An: 4 | Tây Ninh: 3 | Bà Rịa-VT: 4
 -- Users: 37   | CoordRegions: 6 | Teams: 4   | Members: 28 (7/đội)
 -- Vehicles: 8 | Warehouses: 6 (1 central + 5 satellite)
--- Relief Items: 8 | Inventory: 30 rows
+-- Relief Items: 16 | Inventory: ~40 rows
 -- Requests: 12 (HCM×8, LA×4) | Missions: 3 | Logs: 8
 -- Weather: 3  | Notifications: 8 | Config: 12 | Audit: 3
 -- ============================================================

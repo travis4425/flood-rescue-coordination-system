@@ -340,7 +340,7 @@ router.get("/:id", authenticate, async (req, res, next) => {
     const reportsRes = await query(
       `SELECT ir.*,
               u.full_name as reported_by_name,
-              rr.tracking_code, rr.address
+              rr.id as request_id, rr.tracking_code, rr.address
        FROM task_incident_reports ir
        JOIN users u ON ir.reporter_id = u.id
        JOIN missions m ON ir.mission_id = m.id
@@ -564,13 +564,13 @@ router.post("/:id/reports", authenticate, authorize("rescue_team", "coordinator"
         .json({ error: "Sub-mission không thuộc task này." });
     }
 
-    // If unrescuable, mark mission as failed
+    // If unrescuable, mark mission as failed + update tracking_status
     if (report_type === "unrescuable") {
       await query(
         "UPDATE missions SET status = 'failed', updated_at = GETDATE() WHERE id = @id",
         { id: parseInt(mission_id) },
       );
-      // Also log in mission_logs
+      // Log in mission_logs
       await query(
         `INSERT INTO mission_logs (mission_id, user_id, action, description)
          VALUES (@mid, @uid, 'failed', @desc)`,
@@ -580,6 +580,25 @@ router.post("/:id/reports", authenticate, authorize("rescue_team", "coordinator"
           desc: `Báo cáo không thể cứu hộ: ${description}`,
         },
       );
+      // Update tracking_status của rescue_request → incident_reported
+      const reqRow = await query(
+        `SELECT rr.id FROM missions m JOIN rescue_requests rr ON m.request_id = rr.id WHERE m.id = @mid`,
+        { mid: parseInt(mission_id) }
+      );
+      if (reqRow.recordset.length > 0) {
+        const requestId = reqRow.recordset[0].id;
+        await query(
+          `UPDATE rescue_requests SET tracking_status = 'incident_reported', updated_at = GETDATE() WHERE id = @id`,
+          { id: requestId }
+        );
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("request_updated", {
+            id: requestId,
+            tracking_status: "incident_reported",
+          });
+        }
+      }
     }
 
     const reportRes = await query(
@@ -640,6 +659,28 @@ router.put(
           task_id: parseInt(req.params.id),
         },
       );
+
+      // Nếu coordinator đóng/resolve báo cáo → notify tracking
+      if (status === "resolved") {
+        const reqRow = await query(
+          `SELECT rr.id FROM task_incident_reports ir
+           JOIN missions m ON ir.mission_id = m.id
+           JOIN rescue_requests rr ON m.request_id = rr.id
+           WHERE ir.id = @report_id`,
+          { report_id: parseInt(req.params.reportId) }
+        );
+        if (reqRow.recordset.length > 0) {
+          const io = req.app.get("io");
+          if (io) {
+            io.emit("request_updated", {
+              id: reqRow.recordset[0].id,
+              tracking_status: "incident_reported",
+              coordinator_resolved: true,
+            });
+          }
+        }
+      }
+
       res.json({ message: "Đã cập nhật trạng thái báo cáo." });
     } catch (err) {
       next(err);
