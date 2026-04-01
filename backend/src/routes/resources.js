@@ -28,15 +28,22 @@ router.get("/vehicles", authenticate, async (req, res, next) => {
     }
 
     const result = await query(
-      `SELECT v.*, p.name as province_name,
-              COALESCE(rt.name, dispatch_team.name) as team_name,
-              w.name as warehouse_name
+      `SELECT
+              v.id, v.name, v.plate_number, v.type, v.capacity,
+              v.province_id, v.team_id, v.warehouse_id, v.created_at, v.updated_at,
+              p.name as province_name,
+              w.name as warehouse_name,
+              dispatch_team.team_name,
+              CASE
+                WHEN dispatch_team.vehicle_id IS NOT NULL THEN 'in_use'
+                WHEN v.status = 'lost' THEN 'lost'
+                ELSE 'available'
+              END as status
        FROM vehicles v WITH (NOLOCK)
        LEFT JOIN provinces p WITH (NOLOCK) ON v.province_id = p.id
-       LEFT JOIN rescue_teams rt WITH (NOLOCK) ON v.team_id = rt.id
        LEFT JOIN warehouses w WITH (NOLOCK) ON v.warehouse_id = w.id
        LEFT JOIN (
-         SELECT vd.vehicle_id, rt2.name
+         SELECT vd.vehicle_id, rt2.name as team_name
          FROM vehicle_dispatches vd
          JOIN rescue_teams rt2 ON vd.team_id = rt2.id
          WHERE vd.status IN ('dispatched', 'confirmed')
@@ -2592,7 +2599,11 @@ router.get(
            'supply' as record_type,
            rd.distribution_type as direction,
            rd.voucher_code,
-           rd.quantity,
+           CASE
+             WHEN rd.status = 'partially_returned' AND rd.received_return_qty IS NOT NULL
+               THEN rd.received_return_qty
+             ELSE rd.quantity
+           END as quantity,
            rd.status,
            rd.created_at as event_time,
            ri.name as item_name,
@@ -2645,11 +2656,19 @@ router.get(
       let importRows = [];
       if (!type || type === "import") {
         let importWhere = "WHERE sr.status = 'approved'";
+        const importParams = {};
         if (warehouse_id) {
           importWhere += " AND sr.warehouse_id = @warehouse_id";
+          importParams.warehouse_id = parseInt(warehouse_id);
         }
-        if (date_from) importWhere += " AND sr.created_at >= @date_from";
-        if (date_to) importWhere += " AND sr.created_at <= @date_to";
+        if (date_from) {
+          importWhere += " AND sr.created_at >= @date_from";
+          importParams.date_from = date_from;
+        }
+        if (date_to) {
+          importWhere += " AND sr.created_at <= @date_to";
+          importParams.date_to = date_to;
+        }
         const importResult = await query(
           `SELECT
              'import' as record_type,
@@ -2666,9 +2685,9 @@ router.get(
            FROM supply_requests sr
            JOIN relief_items ri ON sr.item_id = ri.id
            LEFT JOIN warehouses w ON sr.warehouse_id = w.id
-           LEFT JOIN users u ON sr.approved_by = u.id
+           LEFT JOIN users u ON sr.reviewed_by = u.id
            ${importWhere}`,
-          params,
+          importParams,
         );
         importRows = importResult.recordset;
       }
