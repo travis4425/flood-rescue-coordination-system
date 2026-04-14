@@ -9,3 +9,5 @@ logs/combined.log
 *.zip
 .DS_Store
 dist/
+.env.docker
+frontend/dist/
