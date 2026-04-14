@@ -1,47 +1,35 @@
-const sql = require("mssql");
-require("dotenv").config();
+const { Pool } = require('pg');
+require('dotenv').config();
 
-const dbConfig = {
-  server: process.env.DB_SERVER || "localhost",
-  port: parseInt(process.env.DB_PORT) || 1433,
-  user: process.env.DB_USER || "sa",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "flood_rescue_db",
-  options: {
-    encrypt: false,
-    trustServerCertificate: true,
-    enableArithAbort: true,
-  },
-  pool: { max: 20, min: 5, idleTimeoutMillis: 30000 },
-  requestTimeout: 30000,
-  connectionTimeout: 30000,
-};
+const pool = new Pool({
+  host:     process.env.DB_HOST     || 'localhost',
+  port:     parseInt(process.env.DB_PORT) || 5432,
+  user:     process.env.DB_USER     || 'postgres',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME     || 'flood_rescue_db',
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+});
 
-let pool = null;
+pool.on('error', (err) => {
+  require('./logger').error('Unexpected DB pool error:', err);
+});
+
+async function query(text, params = []) {
+  const start = Date.now();
+  const res = await pool.query(text, params);
+  const duration = Date.now() - start;
+  if (duration > 1000) {
+    require('./logger').warn('Slow query', { query: text.substring(0, 80), duration });
+  }
+  return res;
+}
 
 async function getPool() {
-  if (!pool) {
-    pool = await sql.connect(dbConfig);
-    console.log("✅ SQL Server connected:", process.env.DB_NAME);
-  }
+  await pool.query('SELECT 1');
   return pool;
 }
 
-async function query(queryStr, inputs = {}) {
-  const p = await getPool();
-  const req = p.request();
-  Object.entries(inputs).forEach(([key, value]) => {
-    if (value === null || value === undefined)
-      req.input(key, sql.NVarChar, null);
-    else if (typeof value === "number") {
-      Number.isInteger(value)
-        ? req.input(key, sql.Int, value)
-        : req.input(key, sql.Float, value);
-    } else if (typeof value === "boolean") req.input(key, sql.Bit, value);
-    else if (value instanceof Date) req.input(key, sql.DateTime2, value);
-    else req.input(key, sql.NVarChar(sql.MAX), String(value));
-  });
-  return req.query(queryStr);
-}
-
-module.exports = { sql, getPool, query, dbConfig };
+module.exports = { pool, query, getPool };
