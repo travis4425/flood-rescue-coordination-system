@@ -2,15 +2,21 @@ const logger = require("../config/logger");
 
 // Global error handler
 function errorHandler(err, req, res, next) {
-  logger.error("Unhandled error:", {
+  const statusCode = err.status || 500;
+  logger.error('Request error', {
     error: err.message,
-    stack: err.stack,
+    statusCode,
+    method: req.method,
     path: req.path,
+    userId: req.user?.id,
+    ip: req.ip,
+    stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined,
   });
-  res.status(err.status || 500).json({
-    error:
-      process.env.NODE_ENV === "production"
-        ? "Đã xảy ra lỗi hệ thống."
+  res.status(statusCode).json({
+    error: statusCode < 500
+      ? err.message
+      : process.env.NODE_ENV === 'production'
+        ? 'Đã xảy ra lỗi hệ thống.'
         : err.message,
   });
 }
@@ -31,7 +37,7 @@ function validateRequired(fields) {
   };
 }
 
-// Sanitize input - basic XSS prevention
+// Sanitize input - lọc input để tránh XSS
 function sanitizeInput(req, res, next) {
   const sanitize = (obj) => {
     if (typeof obj === "string") {
