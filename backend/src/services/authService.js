@@ -8,7 +8,9 @@ const logger = require('../config/logger');
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'strict'
+  // Cross-site deployment (Vercel frontend + Railway backend): dùng 'none' trong production
+  // để cookies được gửi trong cross-site requests (yêu cầu secure: true)
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict'
 };
 
 const AuthService = {

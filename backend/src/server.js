@@ -45,11 +45,14 @@ const ExternalAlertService = require("./services/externalAlertService");
 const app = express();
 const server = http.createServer(app);
 
-// Socket.io
+// Socket.io — dùng cùng danh sách origin với Express CORS
+const SOCKET_ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",").map(o => o.trim()).filter(Boolean);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: SOCKET_ALLOWED_ORIGINS,
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 setupSocket(io);
@@ -80,9 +83,16 @@ app.use(helmet({
 }));
 // crossOriginResourcePolicy: "cross-origin" cho phép browser load ảnh từ /uploads/ khi frontend ở domain khác.
 // Nếu không có option này, helmet mặc định block cross-origin resource loading.
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",").map(o => o.trim()).filter(Boolean);
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, mobile apps, server-to-server)
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   }),
 );
