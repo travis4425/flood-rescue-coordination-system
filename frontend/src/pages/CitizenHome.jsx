@@ -179,7 +179,7 @@ export default function CitizenHome() {
       const params = {};
       if (selectedProvince) params.province_id = selectedProvince;
       const { data } = await requestAPI.getMapData(params);
-      setRequests(data);
+      setRequests(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("Failed to load map data:", e);
     }
@@ -194,10 +194,10 @@ export default function CitizenHome() {
         regionAPI.getWeatherAlerts(),
         resourceAPI.getWarehousesMap(),
       ]);
-      setIncidentTypes(types.data);
-      setUrgencyLevels(levels.data);
+      setIncidentTypes(types.data || []);
+      setUrgencyLevels(levels.data || []);
       setProvinces(provs.data || []);
-      setWeatherAlerts(alerts.data);
+      setWeatherAlerts(alerts.data || []);
       setWarehouses(whs.data || []);
     } catch (e) {
       console.error("Failed to load reference data:", e);
