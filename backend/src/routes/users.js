@@ -13,31 +13,32 @@ router.get(
     try {
       const { page, limit, offset } = getPagination(req.query);
       const { role, search, is_active } = req.query;
+      const params = [];
       let where = "WHERE 1=1";
-      const params = {};
 
       if (req.user.role === "manager" && req.user.province_id) {
-        where += " AND u.province_id = @province_id";
-        params.province_id = req.user.province_id;
+        params.push(req.user.province_id);
+        where += ` AND u.province_id = $${params.length}`;
       }
       if (role) {
-        where += " AND u.role = @role";
-        params.role = role;
+        params.push(role);
+        where += ` AND u.role = $${params.length}`;
       }
       if (is_active !== undefined) {
-        where += " AND u.is_active = @is_active";
-        params.is_active = is_active === "true" ? 1 : 0;
+        params.push(is_active === "true");
+        where += ` AND u.is_active = $${params.length}`;
       }
       if (search) {
-        where +=
-          " AND (u.full_name LIKE @search OR u.username LIKE @search OR u.email LIKE @search)";
-        params.search = `%${search}%`;
+        params.push(`%${search}%`);
+        where += ` AND (u.full_name LIKE $${params.length} OR u.username LIKE $${params.length} OR u.email LIKE $${params.length})`;
       }
 
       const countResult = await query(
         `SELECT COUNT(*) as total FROM users u ${where}`,
         params,
       );
+
+      const listParams = [...params, limit, offset];
       const result = await query(
         `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.role, u.province_id,
               u.is_active, u.last_login, u.created_at,
@@ -46,13 +47,13 @@ router.get(
        LEFT JOIN provinces p ON u.province_id = p.id
        ${where}
        ORDER BY u.created_at DESC
-       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
-        { ...params, offset, limit },
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+        listParams,
       );
       res.json(
         formatResponse(
-          result.recordset,
-          countResult.recordset[0].total,
+          result.rows,
+          parseInt(countResult.rows[0].total),
           page,
           limit,
         ),
@@ -70,69 +71,55 @@ router.post(
   authorize("admin", "manager"),
   async (req, res, next) => {
     try {
-      const {
-        username,
-        email,
-        password,
-        full_name,
-        phone,
-        role,
-        province_id,
-      } = req.body;
+      const { username, email, password, full_name, phone, role, province_id } = req.body;
       if (!username || !email || !password || !full_name || !role) {
         return res.status(400).json({ error: "Thiếu thông tin bắt buộc." });
       }
       const hash = await bcrypt.hash(password, 10);
       const result = await query(
         `INSERT INTO users (username, email, password_hash, full_name, phone, role, province_id)
-       OUTPUT INSERTED.id VALUES (@username, @email, @hash, @full_name, @phone, @role, @province_id)`,
-        {
-          username,
-          email,
-          hash,
-          full_name,
-          phone,
-          role,
-          province_id: province_id ? parseInt(province_id) : null,
-        },
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [
+          username, email, hash, full_name,
+          phone || null, role,
+          province_id ? parseInt(province_id) : null,
+        ],
       );
-      const newUserId = result.recordset[0].id;
+      const newUserId = result.rows[0].id;
 
       // Tự động tạo coordinator_regions nếu role là coordinator và có province_id
       if (role === "coordinator" && province_id) {
         await query(
           `INSERT INTO coordinator_regions (user_id, province_id, max_workload, current_workload)
-           VALUES (@user_id, @province_id, 20, 0)`,
-          { user_id: newUserId, province_id: parseInt(province_id) },
+           VALUES ($1, $2, 20, 0)`,
+          [newUserId, parseInt(province_id)],
         );
       }
 
       // Tự động xếp rescue_team vào đội ít thành viên nhất trong cùng tỉnh
       if (role === "rescue_team" && province_id) {
         const teamResult = await query(
-          `SELECT TOP 1 rt.id
+          `SELECT rt.id
            FROM rescue_teams rt
-           WHERE rt.province_id = @province_id AND rt.status != 'off_duty'
-           ORDER BY (SELECT COUNT(*) FROM rescue_team_members WHERE team_id = rt.id) ASC`,
-          { province_id: parseInt(province_id) },
+           WHERE rt.province_id = $1 AND rt.status != 'off_duty'
+           ORDER BY (SELECT COUNT(*) FROM rescue_team_members WHERE team_id = rt.id) ASC
+           LIMIT 1`,
+          [parseInt(province_id)],
         );
-        if (teamResult.recordset.length > 0) {
-          const teamId = teamResult.recordset[0].id;
+        if (teamResult.rows.length > 0) {
+          const teamId = teamResult.rows[0].id;
           await query(
-            `INSERT INTO rescue_team_members (team_id, user_id, role_in_team) VALUES (@teamId, @userId, 'member')`,
-            { teamId, userId: newUserId },
+            `INSERT INTO rescue_team_members (team_id, user_id, role_in_team) VALUES ($1, $2, 'member')`,
+            [teamId, newUserId],
           );
         }
       }
 
-      res
-        .status(201)
-        .json({ id: newUserId, message: "Tạo tài khoản thành công." });
+      res.status(201).json({ id: newUserId, message: "Tạo tài khoản thành công." });
     } catch (err) {
-      if (err.message?.includes("UNIQUE"))
-        return res
-          .status(400)
-          .json({ error: "Username hoặc email đã tồn tại." });
+      if (err.message?.includes("unique") || err.message?.includes("UNIQUE"))
+        return res.status(400).json({ error: "Username hoặc email đã tồn tại." });
       next(err);
     }
   },
@@ -146,30 +133,25 @@ router.put(
   async (req, res, next) => {
     try {
       const { full_name, phone, role, province_id, is_active } = req.body;
-      let setClause = "updated_at = GETDATE()";
-      const params = { id: parseInt(req.params.id) };
-      if (full_name) {
-        setClause += ", full_name = @full_name";
-        params.full_name = full_name;
-      }
-      if (phone) {
-        setClause += ", phone = @phone";
-        params.phone = phone;
-      }
-      if (role) {
-        setClause += ", role = @role";
-        params.role = role;
-      }
+      const params = [parseInt(req.params.id)];
+      const setClauses = ["updated_at = NOW()"];
+
+      if (full_name !== undefined) { params.push(full_name); setClauses.push(`full_name = $${params.length}`); }
+      if (phone !== undefined)     { params.push(phone);     setClauses.push(`phone = $${params.length}`); }
+      if (role !== undefined)      { params.push(role);      setClauses.push(`role = $${params.length}`); }
       if (province_id !== undefined) {
-        setClause += ", province_id = @province_id";
-        params.province_id = province_id ? parseInt(province_id) : null;
+        params.push(province_id ? parseInt(province_id) : null);
+        setClauses.push(`province_id = $${params.length}`);
       }
       if (is_active !== undefined) {
-        setClause += ", is_active = @is_active";
-        params.is_active = is_active ? 1 : 0;
+        params.push(Boolean(is_active));
+        setClauses.push(`is_active = $${params.length}`);
       }
 
-      await query(`UPDATE users SET ${setClause} WHERE id = @id`, params);
+      await query(
+        `UPDATE users SET ${setClauses.join(", ")} WHERE id = $1`,
+        params,
+      );
       res.json({ message: "Cập nhật tài khoản thành công." });
     } catch (err) {
       next(err);
@@ -186,8 +168,8 @@ router.put(
     try {
       const hash = await bcrypt.hash("123456", 10);
       await query(
-        "UPDATE users SET password_hash = @hash, updated_at = GETDATE() WHERE id = @id",
-        { hash, id: parseInt(req.params.id) },
+        "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+        [hash, parseInt(req.params.id)],
       );
       res.json({ message: "Đã đặt lại mật khẩu thành: 123456" });
     } catch (err) {
@@ -207,14 +189,14 @@ router.get(
         `SELECT u.id, u.full_name, u.phone, u.province_id, p.name as province_name,
               cr.id as assignment_id, cr.max_workload, cr.current_workload,
               cr.district_id, d.name as district_name, cr.is_primary
-       FROM users u
-       JOIN coordinator_regions cr ON u.id = cr.user_id
-       LEFT JOIN provinces p ON cr.province_id = p.id
-       LEFT JOIN districts d ON cr.district_id = d.id
-       WHERE u.role = 'coordinator' AND u.is_active = 1
-       ORDER BY cr.current_workload ASC`,
+         FROM users u
+         JOIN coordinator_regions cr ON u.id = cr.user_id
+         LEFT JOIN provinces p ON cr.province_id = p.id
+         LEFT JOIN districts d ON cr.district_id = d.id
+         WHERE u.role = 'coordinator' AND u.is_active = true
+         ORDER BY cr.current_workload ASC`,
       );
-      res.json(result.recordset);
+      res.json(result.rows);
     } catch (err) {
       next(err);
     }
@@ -228,41 +210,40 @@ router.get(
   authorize("admin", "manager"),
   async (req, res, next) => {
     try {
+      const userId = parseInt(req.params.id);
       const result = await query(
         `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.role,
               u.province_id, u.is_active, u.last_login, u.created_at,
               p.name as province_name
-       FROM users u
-       LEFT JOIN provinces p ON u.province_id = p.id
-       WHERE u.id = @id`,
-        { id: parseInt(req.params.id) },
+         FROM users u
+         LEFT JOIN provinces p ON u.province_id = p.id
+         WHERE u.id = $1`,
+        [userId],
       );
-      if (result.recordset.length === 0)
+      if (result.rows.length === 0)
         return res.status(404).json({ error: "Không tìm thấy user" });
 
-      // Get coordinator regions if applicable
       const regions = await query(
         `SELECT cr.*, p.name as province_name, d.name as district_name
-       FROM coordinator_regions cr
-       LEFT JOIN provinces p ON cr.province_id = p.id
-       LEFT JOIN districts d ON cr.district_id = d.id
-       WHERE cr.user_id = @userId`,
-        { userId: parseInt(req.params.id) },
+         FROM coordinator_regions cr
+         LEFT JOIN provinces p ON cr.province_id = p.id
+         LEFT JOIN districts d ON cr.district_id = d.id
+         WHERE cr.user_id = $1`,
+        [userId],
       );
 
-      // Get team memberships
       const teams = await query(
         `SELECT rtm.role_in_team, rt.id as team_id, rt.name as team_name, rt.code as team_code
-       FROM rescue_team_members rtm
-       JOIN rescue_teams rt ON rtm.team_id = rt.id
-       WHERE rtm.user_id = @userId`,
-        { userId: parseInt(req.params.id) },
+         FROM rescue_team_members rtm
+         JOIN rescue_teams rt ON rtm.team_id = rt.id
+         WHERE rtm.user_id = $1`,
+        [userId],
       );
 
       res.json({
-        ...result.recordset[0],
-        coordinator_regions: regions.recordset,
-        teams: teams.recordset,
+        ...result.rows[0],
+        coordinator_regions: regions.rows,
+        teams: teams.rows,
       });
     } catch (err) {
       next(err);
@@ -277,36 +258,33 @@ router.put(
   authorize("admin", "manager"),
   async (req, res, next) => {
     try {
+      const userId = parseInt(req.params.id);
       const result = await query(
-        `UPDATE users SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = GETDATE()
-       OUTPUT INSERTED.is_active
-       WHERE id = @id`,
-        { id: parseInt(req.params.id) },
+        `UPDATE users SET is_active = NOT is_active, updated_at = NOW()
+         WHERE id = $1
+         RETURNING is_active`,
+        [userId],
       );
-      if (result.recordset.length === 0)
+      if (result.rows.length === 0)
         return res.status(404).json({ error: "Không tìm thấy user" });
 
-      const newStatus = result.recordset[0].is_active;
+      const newStatus = result.rows[0].is_active;
 
       // Audit log
       await query(
-        `
-      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_values, ip_address)
-      VALUES (@userId, @action, 'user', @entityId, @newVal, @ip)
-    `,
-        {
-          userId: req.user.id,
-          action: newStatus ? "activate_user" : "deactivate_user",
-          entityId: parseInt(req.params.id),
-          newVal: JSON.stringify({ is_active: newStatus }),
-          ip: req.ip,
-        },
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_values, ip_address)
+         VALUES ($1, $2, 'user', $3, $4, $5)`,
+        [
+          req.user.id,
+          newStatus ? "activate_user" : "deactivate_user",
+          userId,
+          JSON.stringify({ is_active: newStatus }),
+          req.ip,
+        ],
       );
 
       res.json({
-        message: newStatus
-          ? "Đã kích hoạt tài khoản"
-          : "Đã vô hiệu hóa tài khoản",
+        message: newStatus ? "Đã kích hoạt tài khoản" : "Đã vô hiệu hóa tài khoản",
         is_active: newStatus,
       });
     } catch (err) {
@@ -326,14 +304,14 @@ router.get(
     try {
       const result = await query(
         `SELECT cr.*, p.name as province_name, d.name as district_name
-       FROM coordinator_regions cr
-       LEFT JOIN provinces p ON cr.province_id = p.id
-       LEFT JOIN districts d ON cr.district_id = d.id
-       WHERE cr.user_id = @userId
-       ORDER BY cr.is_primary DESC`,
-        { userId: parseInt(req.params.id) },
+         FROM coordinator_regions cr
+         LEFT JOIN provinces p ON cr.province_id = p.id
+         LEFT JOIN districts d ON cr.district_id = d.id
+         WHERE cr.user_id = $1
+         ORDER BY cr.is_primary DESC`,
+        [parseInt(req.params.id)],
       );
-      res.json(result.recordset);
+      res.json(result.rows);
     } catch (err) {
       next(err);
     }
@@ -347,42 +325,33 @@ router.post(
   authorize("admin", "manager"),
   async (req, res, next) => {
     try {
-      const {
-        province_id,
-        district_id,
-        is_primary = false,
-        max_workload = 20,
-      } = req.body;
+      const { province_id, district_id, is_primary = false, max_workload = 20 } = req.body;
       if (!province_id && !district_id) {
-        return res
-          .status(400)
-          .json({ error: "Cần ít nhất province_id hoặc district_id" });
+        return res.status(400).json({ error: "Cần ít nhất province_id hoặc district_id" });
       }
 
       // Verify user is coordinator
       const user = await query(
-        "SELECT role FROM users WHERE id = @id AND role = 'coordinator'",
-        { id: parseInt(req.params.id) },
+        "SELECT role FROM users WHERE id = $1 AND role = 'coordinator'",
+        [parseInt(req.params.id)],
       );
-      if (user.recordset.length === 0)
+      if (user.rows.length === 0)
         return res.status(400).json({ error: "User không phải coordinator" });
 
       const result = await query(
-        `
-      INSERT INTO coordinator_regions (user_id, province_id, district_id, is_primary, max_workload)
-      OUTPUT INSERTED.*
-      VALUES (@userId, @provinceId, @districtId, @isPrimary, @maxWorkload)
-    `,
-        {
-          userId: parseInt(req.params.id),
-          provinceId: province_id ? parseInt(province_id) : null,
-          districtId: district_id ? parseInt(district_id) : null,
-          isPrimary: is_primary ? 1 : 0,
-          maxWorkload: parseInt(max_workload),
-        },
+        `INSERT INTO coordinator_regions (user_id, province_id, district_id, is_primary, max_workload)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+        [
+          parseInt(req.params.id),
+          province_id ? parseInt(province_id) : null,
+          district_id ? parseInt(district_id) : null,
+          Boolean(is_primary),
+          parseInt(max_workload),
+        ],
       );
 
-      res.status(201).json(result.recordset[0]);
+      res.status(201).json(result.rows[0]);
     } catch (err) {
       next(err);
     }
@@ -397,35 +366,31 @@ router.put(
   async (req, res, next) => {
     try {
       const { province_id, district_id, is_primary, max_workload } = req.body;
-      let setClause = "";
-      const params = {
-        id: parseInt(req.params.regionId),
-        userId: parseInt(req.params.id),
-      };
+      const params = [parseInt(req.params.regionId), parseInt(req.params.id)];
+      const setClauses = [];
 
       if (province_id !== undefined) {
-        setClause += "province_id = @provinceId, ";
-        params.provinceId = province_id ? parseInt(province_id) : null;
+        params.push(province_id ? parseInt(province_id) : null);
+        setClauses.push(`province_id = $${params.length}`);
       }
       if (district_id !== undefined) {
-        setClause += "district_id = @districtId, ";
-        params.districtId = district_id ? parseInt(district_id) : null;
+        params.push(district_id ? parseInt(district_id) : null);
+        setClauses.push(`district_id = $${params.length}`);
       }
       if (is_primary !== undefined) {
-        setClause += "is_primary = @isPrimary, ";
-        params.isPrimary = is_primary ? 1 : 0;
+        params.push(Boolean(is_primary));
+        setClauses.push(`is_primary = $${params.length}`);
       }
       if (max_workload !== undefined) {
-        setClause += "max_workload = @maxWorkload, ";
-        params.maxWorkload = parseInt(max_workload);
+        params.push(parseInt(max_workload));
+        setClauses.push(`max_workload = $${params.length}`);
       }
 
-      if (!setClause)
+      if (!setClauses.length)
         return res.status(400).json({ error: "Không có dữ liệu cập nhật" });
-      setClause = setClause.slice(0, -2); // remove trailing comma
 
       await query(
-        `UPDATE coordinator_regions SET ${setClause} WHERE id = @id AND user_id = @userId`,
+        `UPDATE coordinator_regions SET ${setClauses.join(", ")} WHERE id = $1 AND user_id = $2`,
         params,
       );
       res.json({ message: "Đã cập nhật phân vùng coordinator" });
@@ -443,8 +408,8 @@ router.delete(
   async (req, res, next) => {
     try {
       await query(
-        "DELETE FROM coordinator_regions WHERE id = @id AND user_id = @userId",
-        { id: parseInt(req.params.regionId), userId: parseInt(req.params.id) },
+        "DELETE FROM coordinator_regions WHERE id = $1 AND user_id = $2",
+        [parseInt(req.params.regionId), parseInt(req.params.id)],
       );
       res.json({ message: "Đã xóa phân vùng coordinator" });
     } catch (err) {
