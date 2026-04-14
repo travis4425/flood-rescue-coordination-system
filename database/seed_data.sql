@@ -407,7 +407,49 @@ INSERT INTO rescue_requests (
  10.7769,106.7009,N'Địa chỉ không xác thực',1,2,NULL,
  1,5,N'Test request',0,N'none',1,10,4,
  'rejected',DATEADD(HOUR,-6,GETDATE()),NULL,
- NULL,NULL,NULL,NULL,0,NULL,N'Địa chỉ không xác thực, không liên lạc được.',NULL);
+ NULL,NULL,NULL,NULL,0,NULL,N'Địa chỉ không xác thực, không liên lạc được.',NULL),
+
+-- ── Bình Dương (province_id=2, coordinator_id=5 – Lý Thị Bình) ──────────────
+-- RQ13: PENDING – Thuận An
+(13,'RQ-2026-BD001',N'Trần Minh Khoa',  '0912345601',N'45 Đại lộ Bình Dương, Thuận An',
+ 10.9982,106.6944,N'45 Đại lộ Bình Dương, TX Thuận An, Bình Dương',2,7,NULL,
+ 1,2,N'Nhà xưởng bị ngập 1.2m, 8 công nhân mắc kẹt không thoát ra được.',8,
+ N'Xuồng cứu hộ, sơ tán',4,90,5,
+ 'pending',DATEADD(MINUTE,-50,GETDATE()),NULL,
+ NULL,NULL,NULL,NULL,0,NULL,NULL,NULL),
+
+-- RQ14: PENDING – Dĩ An
+(14,'RQ-2026-BD002',N'Nguyễn Thị Lan',  '0912345602',N'12 Võ Thị Sáu, Dĩ An',
+ 10.9070,106.7660,N'12 Võ Thị Sáu, TX Dĩ An, Bình Dương',2,8,NULL,
+ 4,1,N'Bệnh nhân nặng kẹt trong nhà ngập, cần y tế khẩn cấp và sơ tán.',2,
+ N'Y tế khẩn cấp, sơ tán',3,95,5,
+ 'pending',DATEADD(MINUTE,-30,GETDATE()),NULL,
+ NULL,NULL,NULL,NULL,0,NULL,NULL,NULL),
+
+-- RQ15: VERIFIED – Thủ Dầu Một
+(15,'RQ-2026-BD003',N'Lê Văn Phúc',     '0912345603',N'78 Cách Mạng Tháng 8, Thủ Dầu Một',
+ 11.1353,106.6583,N'78 Cách Mạng Tháng 8, TP Thủ Dầu Một, Bình Dương',2,6,NULL,
+ 6,2,N'Khu dân cư 25 hộ bị ngập, thiếu lương thực và nước uống 2 ngày qua.',70,
+ N'Lương thực, nước uống',3,75,5,
+ 'verified',DATEADD(HOUR,-3,GETDATE()),DATEADD(HOUR,-2,GETDATE()),
+ NULL,NULL,NULL,NULL,0,NULL,NULL,NULL),
+
+-- RQ16: ASSIGNED – Thuận An (gán đội BD-01)
+(16,'RQ-2026-BD004',N'Phạm Thị Hương',  '0912345604',N'33 QL13, Thuận An',
+ 10.9900,106.6850,N'33 Quốc lộ 13, TX Thuận An, Bình Dương',2,7,NULL,
+ 3,2,N'Sạt lở bờ kênh, 3 căn nhà có nguy cơ đổ sập, 12 người cần sơ tán gấp.',12,
+ N'Sơ tán khẩn, sơ cứu',4,85,5,
+ 'assigned',DATEADD(HOUR,-2,GETDATE()),DATEADD(HOUR,-1,GETDATE()),
+ 3,DATEADD(MINUTE,-40,GETDATE()),NULL,NULL,0,NULL,NULL,NULL),
+
+-- RQ17: COMPLETED – Bến Cát
+(17,'RQ-2026-BD005',N'Hoàng Văn Tùng',  '0912345605',N'56 ĐT741, Bến Cát',
+ 11.2200,106.5700,N'56 Đường tỉnh 741, Huyện Bến Cát, Bình Dương',2,9,NULL,
+ 1,2,N'10 hộ dân bị cô lập do ngập lũ, đã được sơ tán an toàn.',30,
+ N'Sơ tán',3,70,5,
+ 'completed',DATEADD(HOUR,-14,GETDATE()),DATEADD(HOUR,-13,GETDATE()),
+ 3,DATEADD(HOUR,-13,GETDATE()),DATEADD(HOUR,-12,GETDATE()),DATEADD(HOUR,-9,GETDATE()),
+ 28,N'Sơ tán 28/30 người. 2 người từ chối rời nhà.',NULL,240);
 SET IDENTITY_INSERT rescue_requests OFF;
 
 -- 17. MISSIONS (3)
@@ -475,6 +517,7 @@ UPDATE rescue_requests SET citizen_confirmed = 1, citizen_confirmed_at = GETDATE
 
 -- Update coordinator workloads
 UPDATE coordinator_regions SET current_workload = 6 WHERE user_id = 4;
+UPDATE coordinator_regions SET current_workload = 4 WHERE user_id = 5;
 UPDATE coordinator_regions SET current_workload = 4 WHERE user_id = 7;
 
 -- ============================================================
@@ -485,7 +528,7 @@ UPDATE coordinator_regions SET current_workload = 4 WHERE user_id = 7;
 -- Users: 37   | CoordRegions: 6 | Teams: 4   | Members: 28 (7/đội)
 -- Vehicles: 8 | Warehouses: 6 (1 central + 5 satellite)
 -- Relief Items: 16 | Inventory: ~40 rows
--- Requests: 12 (HCM×8, LA×4) | Missions: 3 | Logs: 8
+-- Requests: 17 (HCM×8, BD×5, LA×4) | Missions: 3 | Logs: 8
 -- Weather: 3  | Notifications: 8 | Config: 12 | Audit: 3
 -- ============================================================
 PRINT N'✅ Seed data HCM scope inserted successfully';
