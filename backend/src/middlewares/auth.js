@@ -1,21 +1,21 @@
 const jwt = require("jsonwebtoken");
 
 function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({ error: "Không có quyền truy cập. Vui lòng đăng nhập." });
-  }
+  // Ưu tiên cookie (production), fallback Bearer header (dev/API testing)
+  const token = req.cookies?.access_token ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1]
+      : null);
+
+  if (!token) return res.status(401).json({ error: 'Không có quyền truy cập. Vui lòng đăng nhập.' });
+
   try {
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch (err) {
-    return res
-      .status(401)
-      .json({ error: "Token không hợp lệ hoặc đã hết hạn." });
+    if (err.name === 'TokenExpiredError')
+      return res.status(401).json({ error: 'TOKEN_EXPIRED', message: 'Phiên làm việc hết hạn.' });
+    return res.status(401).json({ error: 'Token không hợp lệ.' });
   }
 }
 
@@ -31,10 +31,13 @@ function authorize(...roles) {
 }
 
 function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
+  const token = req.cookies?.access_token ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1]
+      : null);
+
+  if (token) {
     try {
-      const token = authHeader.split(" ")[1];
       req.user = jwt.verify(token, process.env.JWT_SECRET);
     } catch (e) {}
   }
