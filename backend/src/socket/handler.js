@@ -100,8 +100,8 @@ function setupSocket(io) {
       if (socket.user && notificationId) {
         try {
           await query(
-            "UPDATE notifications SET is_read = 1 WHERE id = @id",
-            { id: parseInt(notificationId) },
+            "UPDATE notifications SET is_read = true WHERE id = $1",
+            [parseInt(notificationId)],
           );
           logger.debug(`User ${socket.user.id} read notification ${notificationId}`);
         } catch (e) {
