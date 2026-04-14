@@ -1,4 +1,13 @@
 require("dotenv").config();
+
+// Validate required environment variables on startup
+const REQUIRED_ENV = ['JWT_SECRET', 'DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+const missing = REQUIRED_ENV.filter(key => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -29,6 +38,9 @@ const dashboardRoutes = require("./routes/dashboard");
 const configRoutes = require("./routes/config");
 const auditLogRoutes = require("./routes/auditLogs");
 const taskRoutes = require("./routes/tasks");
+const reportRoutes = require("./routes/reports");
+const disasterEventRoutes = require("./routes/disasterEvents");
+const ExternalAlertService = require("./services/externalAlertService");
 
 const app = express();
 const server = http.createServer(app);
@@ -43,8 +55,29 @@ const io = new Server(server, {
 setupSocket(io);
 app.set("io", io);
 
+// HTTPS redirect (production only)
+app.use(require('./middlewares/httpsRedirect'));
+
 // Security
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:", "https://*.viettelmap.vn", "https://res.cloudinary.com"],
+      connectSrc: ["'self'", "wss:", "https://*.viettelmap.vn",
+                   "https://api.openweathermap.org",
+                   "https://earthquake.usgs.gov",
+                   "https://firms.modaps.eosdis.nasa.gov",
+                   "https://nominatim.openstreetmap.org"],
+      frameSrc:   ["'none'"],
+      objectSrc:  ["'none'"],
+    }
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 // crossOriginResourcePolicy: "cross-origin" cho phép browser load ảnh từ /uploads/ khi frontend ở domain khác.
 // Nếu không có option này, helmet mặc định block cross-origin resource loading.
 app.use(
@@ -80,6 +113,7 @@ const loginLimiter = rateLimit({
 });
 
 // Middleware
+app.use(require('cookie-parser')());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(
@@ -111,6 +145,26 @@ app.use(
     },
   }),
 );
+// Health check — nâng cao (Phase D1)
+app.get('/api/health', async (req, res) => {
+  const checks = {
+    status: 'OK',
+    version: process.env.APP_VERSION || '2.0.0',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    services: {}
+  };
+  try {
+    await require('./config/database').query('SELECT 1');
+    checks.services.database = { status: 'OK' };
+  } catch (e) {
+    checks.services.database = { status: 'ERROR', error: e.message };
+    checks.status = 'DEGRADED';
+  }
+  checks.services.socket = { status: 'OK' };
+  res.status(checks.status === 'OK' ? 200 : 503).json(checks);
+});
+
 // Swagger JSON endpoint
 app.get("/api-docs.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
@@ -132,6 +186,8 @@ app.use("/api/dashboard", generalLimiter, dashboardRoutes);
 app.use("/api/config", generalLimiter, configRoutes);
 app.use("/api/audit-logs", generalLimiter, auditLogRoutes);
 app.use("/api/tasks", generalLimiter, taskRoutes);
+app.use("/api/reports", generalLimiter, reportRoutes);
+app.use("/api/disaster-events", generalLimiter, disasterEventRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -152,12 +208,11 @@ async function start() {
   try {
     await getPool(); // Test DB connection
     server.listen(PORT, () => {
-      logger.info(`🚀 Flood Rescue API running on port ${PORT}`);
+      logger.info(`🚀 VDRCS API running on port ${PORT}`);
       logger.info(`📡 Socket.io ready`);
       logger.info(`📋 Swagger API Docs: http://localhost:${PORT}/api-docs`);
-      logger.info(
-        `🌍 CORS: ${process.env.CORS_ORIGIN || "http://localhost:5173"}`,
-      );
+      logger.info(`🌍 CORS: ${process.env.CORS_ORIGIN || "http://localhost:5173"}`);
+      ExternalAlertService.startScheduler();
     });
   } catch (err) {
     logger.error("Failed to start server:", err);
