@@ -13,15 +13,15 @@ async function migrate() {
       WHERE TABLE_NAME = 'rescue_requests' AND COLUMN_NAME = 'geo_province_name'
     `);
 
-    if (check.recordset[0].cnt > 0) {
+    if (parseInt(check.rows[0].cnt) > 0) {
       console.log('Columns already exist, skipping.');
       process.exit(0);
     }
 
-    await query(`ALTER TABLE rescue_requests ADD geo_province_name NVARCHAR(255) NULL`);
+    await query(`ALTER TABLE rescue_requests ADD geo_province_name VARCHAR(255) NULL`);
     console.log('Added geo_province_name');
 
-    await query(`ALTER TABLE rescue_requests ADD geo_district_name NVARCHAR(255) NULL`);
+    await query(`ALTER TABLE rescue_requests ADD geo_district_name VARCHAR(255) NULL`);
     console.log('Added geo_district_name');
 
     // Also add citizen_name, citizen_phone if missing (older installs might not have them)
@@ -30,9 +30,9 @@ async function migrate() {
       FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_NAME = 'rescue_requests' AND COLUMN_NAME = 'citizen_name'
     `);
-    if (checkCitizen.recordset[0].cnt === 0) {
-      await query(`ALTER TABLE rescue_requests ADD citizen_name NVARCHAR(255) NULL`);
-      await query(`ALTER TABLE rescue_requests ADD citizen_phone NVARCHAR(50) NULL`);
+    if (parseInt(checkCitizen.rows[0].cnt) === 0) {
+      await query(`ALTER TABLE rescue_requests ADD citizen_name VARCHAR(255) NULL`);
+      await query(`ALTER TABLE rescue_requests ADD citizen_phone VARCHAR(50) NULL`);
       console.log('Added citizen_name, citizen_phone');
     }
 
