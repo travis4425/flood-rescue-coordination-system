@@ -10,35 +10,36 @@ router.get("/", authenticate, async (req, res, next) => {
     const { page, limit, offset } = getPagination(req.query);
     const { is_read } = req.query;
 
-    let where = "WHERE n.user_id = @userId";
-    const inputs = { userId: req.user.id };
+    const params = [req.user.id];
+    let where = "WHERE n.user_id = $1";
 
     if (is_read !== undefined) {
-      where += " AND n.is_read = @isRead";
-      inputs.isRead = is_read === "true" ? 1 : 0;
+      params.push(is_read === "true");
+      where += ` AND n.is_read = $${params.length}`;
     }
 
     const countResult = await query(
       `SELECT COUNT(*) as total FROM notifications n ${where}`,
-      inputs,
+      params,
     );
 
+    params.push(limit, offset);
     const result = await query(
       `
-      SELECT n.*, 
+      SELECT n.*,
         CASE WHEN n.metadata IS NOT NULL THEN n.metadata ELSE NULL END as metadata
       FROM notifications n
       ${where}
       ORDER BY n.created_at DESC
-      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+      LIMIT $${params.length - 1} OFFSET $${params.length}
     `,
-      { ...inputs, offset, limit },
+      params,
     );
 
     res.json(
       formatResponse(
-        result.recordset,
-        countResult.recordset[0].total,
+        result.rows,
+        parseInt(countResult.rows[0].total),
         page,
         limit,
       ),
@@ -52,10 +53,10 @@ router.get("/", authenticate, async (req, res, next) => {
 router.get("/unread-count", authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      "SELECT COUNT(*) as count FROM notifications WHERE user_id = @userId AND is_read = 0",
-      { userId: req.user.id },
+      "SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = false",
+      [req.user.id],
     );
-    res.json({ count: result.recordset[0].count });
+    res.json({ count: parseInt(result.rows[0].count) });
   } catch (err) {
     next(err);
   }
@@ -65,8 +66,8 @@ router.get("/unread-count", authenticate, async (req, res, next) => {
 router.put("/:id/read", authenticate, async (req, res, next) => {
   try {
     await query(
-      "UPDATE notifications SET is_read = 1 WHERE id = @id AND user_id = @userId",
-      { id: parseInt(req.params.id), userId: req.user.id },
+      "UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2",
+      [parseInt(req.params.id), req.user.id],
     );
     res.json({ message: "Đã đánh dấu đã đọc" });
   } catch (err) {
@@ -78,8 +79,8 @@ router.put("/:id/read", authenticate, async (req, res, next) => {
 router.put("/read-all", authenticate, async (req, res, next) => {
   try {
     await query(
-      "UPDATE notifications SET is_read = 1 WHERE user_id = @userId AND is_read = 0",
-      { userId: req.user.id },
+      "UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false",
+      [req.user.id],
     );
     res.json({ message: "Đã đánh dấu tất cả đã đọc" });
   } catch (err) {
@@ -91,8 +92,8 @@ router.put("/read-all", authenticate, async (req, res, next) => {
 router.delete("/:id", authenticate, async (req, res, next) => {
   try {
     await query(
-      "DELETE FROM notifications WHERE id = @id AND user_id = @userId",
-      { id: parseInt(req.params.id), userId: req.user.id },
+      "DELETE FROM notifications WHERE id = $1 AND user_id = $2",
+      [parseInt(req.params.id), req.user.id],
     );
     res.json({ message: "Đã xóa thông báo" });
   } catch (err) {
@@ -111,26 +112,26 @@ router.post("/", authenticate, async (req, res, next) => {
     const result = await query(
       `
       INSERT INTO notifications (user_id, tracking_code, type, title, message, metadata)
-      OUTPUT INSERTED.*
-      VALUES (@user_id, @tracking_code, @type, @title, @message, @metadata)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
     `,
-      {
-        user_id: user_id || null,
-        tracking_code: tracking_code || null,
+      [
+        user_id || null,
+        tracking_code || null,
         type,
         title,
         message,
-        metadata: metadata ? JSON.stringify(metadata) : null,
-      },
+        metadata ? JSON.stringify(metadata) : null,
+      ],
     );
 
     // Emit realtime notification
     const io = req.app.get("io");
     if (io && user_id) {
-      io.to(`user_${user_id}`).emit("notification", result.recordset[0]);
+      io.to(`user_${user_id}`).emit("notification", result.rows[0]);
     }
 
-    res.status(201).json(result.recordset[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     next(err);
   }
