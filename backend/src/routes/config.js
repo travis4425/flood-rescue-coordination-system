@@ -13,7 +13,7 @@ router.get(
       const result = await query(
         "SELECT * FROM system_config ORDER BY config_key",
       );
-      res.json(result.recordset);
+      res.json(result.rows);
     } catch (err) {
       next(err);
     }
@@ -25,7 +25,7 @@ router.get(
 router.get("/incident-types", authenticate, authorize("admin"), async (req, res, next) => {
   try {
     const result = await query("SELECT * FROM incident_types ORDER BY id");
-    res.json(result.recordset);
+    res.json(result.rows);
   } catch (err) { next(err); }
 });
 
@@ -35,18 +35,18 @@ router.post("/incident-types", authenticate, authorize("admin"), async (req, res
     if (!name || !code) return res.status(400).json({ error: "Thiếu tên hoặc mã" });
     const result = await query(
       `INSERT INTO incident_types (name, code, icon, color, description, rescue_category, is_active)
-       OUTPUT INSERTED.*
-       VALUES (@name, @code, @icon, @color, @desc, @rescue_category, @is_active)`,
-      {
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
         name, code,
-        icon: icon || null,
-        color: color || null,
-        desc: description || null,
-        rescue_category: rescue_category || "cuu_nan",
-        is_active: is_active !== undefined ? (is_active ? 1 : 0) : 1,
-      }
+        icon || null,
+        color || null,
+        description || null,
+        rescue_category || "cuu_nan",
+        is_active !== undefined ? Boolean(is_active) : true,
+      ]
     );
-    res.status(201).json(result.recordset[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
 
@@ -56,28 +56,28 @@ router.put("/incident-types/:id", authenticate, authorize("admin"), async (req, 
     if (!name || !code) return res.status(400).json({ error: "Thiếu tên hoặc mã" });
     const result = await query(
       `UPDATE incident_types
-       SET name=@name, code=@code, icon=@icon, color=@color, description=@desc,
-           rescue_category=@rescue_category, is_active=@is_active
-       OUTPUT INSERTED.*
-       WHERE id=@id`,
-      {
-        id: parseInt(req.params.id),
+       SET name=$1, code=$2, icon=$3, color=$4, description=$5,
+           rescue_category=$6, is_active=$7
+       WHERE id=$8
+       RETURNING *`,
+      [
         name, code,
-        icon: icon || null,
-        color: color || null,
-        desc: description || null,
-        rescue_category: rescue_category || "cuu_nan",
-        is_active: is_active ? 1 : 0,
-      }
+        icon || null,
+        color || null,
+        description || null,
+        rescue_category || "cuu_nan",
+        Boolean(is_active),
+        parseInt(req.params.id),
+      ]
     );
-    if (!result.recordset.length) return res.status(404).json({ error: "Không tìm thấy" });
-    res.json(result.recordset[0]);
+    if (!result.rows.length) return res.status(404).json({ error: "Không tìm thấy" });
+    res.json(result.rows[0]);
   } catch (err) { next(err); }
 });
 
 router.delete("/incident-types/:id", authenticate, authorize("admin"), async (req, res, next) => {
   try {
-    await query("DELETE FROM incident_types WHERE id=@id", { id: parseInt(req.params.id) });
+    await query("DELETE FROM incident_types WHERE id=$1", [parseInt(req.params.id)]);
     res.json({ message: "Đã xóa" });
   } catch (err) { next(err); }
 });
@@ -87,7 +87,7 @@ router.delete("/incident-types/:id", authenticate, authorize("admin"), async (re
 router.get("/urgency-levels", authenticate, authorize("admin"), async (req, res, next) => {
   try {
     const result = await query("SELECT * FROM urgency_levels ORDER BY priority_score DESC");
-    res.json(result.recordset);
+    res.json(result.rows);
   } catch (err) { next(err); }
 });
 
@@ -97,17 +97,17 @@ router.post("/urgency-levels", authenticate, authorize("admin"), async (req, res
     if (!name || !code || priority_score === undefined) return res.status(400).json({ error: "Thiếu tên, mã hoặc điểm ưu tiên" });
     const result = await query(
       `INSERT INTO urgency_levels (name, code, priority_score, color, max_response_minutes, description)
-       OUTPUT INSERTED.*
-       VALUES (@name, @code, @priority_score, @color, @max_response_minutes, @desc)`,
-      {
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
         name, code,
-        priority_score: parseInt(priority_score),
-        color: color || null,
-        max_response_minutes: max_response_minutes ? parseInt(max_response_minutes) : null,
-        desc: description || null,
-      }
+        parseInt(priority_score),
+        color || null,
+        max_response_minutes ? parseInt(max_response_minutes) : null,
+        description || null,
+      ]
     );
-    res.status(201).json(result.recordset[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
 
@@ -117,27 +117,27 @@ router.put("/urgency-levels/:id", authenticate, authorize("admin"), async (req, 
     if (!name || !code || priority_score === undefined) return res.status(400).json({ error: "Thiếu tên, mã hoặc điểm ưu tiên" });
     const result = await query(
       `UPDATE urgency_levels
-       SET name=@name, code=@code, priority_score=@priority_score, color=@color,
-           max_response_minutes=@max_response_minutes, description=@desc
-       OUTPUT INSERTED.*
-       WHERE id=@id`,
-      {
-        id: parseInt(req.params.id),
+       SET name=$1, code=$2, priority_score=$3, color=$4,
+           max_response_minutes=$5, description=$6
+       WHERE id=$7
+       RETURNING *`,
+      [
         name, code,
-        priority_score: parseInt(priority_score),
-        color: color || null,
-        max_response_minutes: max_response_minutes ? parseInt(max_response_minutes) : null,
-        desc: description || null,
-      }
+        parseInt(priority_score),
+        color || null,
+        max_response_minutes ? parseInt(max_response_minutes) : null,
+        description || null,
+        parseInt(req.params.id),
+      ]
     );
-    if (!result.recordset.length) return res.status(404).json({ error: "Không tìm thấy" });
-    res.json(result.recordset[0]);
+    if (!result.rows.length) return res.status(404).json({ error: "Không tìm thấy" });
+    res.json(result.rows[0]);
   } catch (err) { next(err); }
 });
 
 router.delete("/urgency-levels/:id", authenticate, authorize("admin"), async (req, res, next) => {
   try {
-    await query("DELETE FROM urgency_levels WHERE id=@id", { id: parseInt(req.params.id) });
+    await query("DELETE FROM urgency_levels WHERE id=$1", [parseInt(req.params.id)]);
     res.json({ message: "Đã xóa" });
   } catch (err) { next(err); }
 });
@@ -147,7 +147,7 @@ router.delete("/urgency-levels/:id", authenticate, authorize("admin"), async (re
 router.get("/relief-items", authenticate, authorize("admin"), async (req, res, next) => {
   try {
     const result = await query("SELECT * FROM relief_items ORDER BY category, name");
-    res.json(result.recordset);
+    res.json(result.rows);
   } catch (err) { next(err); }
 });
 
@@ -157,17 +157,17 @@ router.post("/relief-items", authenticate, authorize("admin"), async (req, res, 
     if (!name) return res.status(400).json({ error: "Thiếu tên vật tư" });
     const result = await query(
       `INSERT INTO relief_items (name, category, unit, description, rescue_category)
-       OUTPUT INSERTED.*
-       VALUES (@name, @category, @unit, @desc, @rescue_category)`,
-      {
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [
         name,
-        category: category || null,
-        unit: unit || null,
-        desc: description || null,
-        rescue_category: rescue_category || "all",
-      }
+        category || null,
+        unit || null,
+        description || null,
+        rescue_category || "all",
+      ]
     );
-    res.status(201).json(result.recordset[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
 
@@ -177,26 +177,26 @@ router.put("/relief-items/:id", authenticate, authorize("admin"), async (req, re
     if (!name) return res.status(400).json({ error: "Thiếu tên vật tư" });
     const result = await query(
       `UPDATE relief_items
-       SET name=@name, category=@category, unit=@unit, description=@desc, rescue_category=@rescue_category
-       OUTPUT INSERTED.*
-       WHERE id=@id`,
-      {
-        id: parseInt(req.params.id),
+       SET name=$1, category=$2, unit=$3, description=$4, rescue_category=$5
+       WHERE id=$6
+       RETURNING *`,
+      [
         name,
-        category: category || null,
-        unit: unit || null,
-        desc: description || null,
-        rescue_category: rescue_category || "all",
-      }
+        category || null,
+        unit || null,
+        description || null,
+        rescue_category || "all",
+        parseInt(req.params.id),
+      ]
     );
-    if (!result.recordset.length) return res.status(404).json({ error: "Không tìm thấy" });
-    res.json(result.recordset[0]);
+    if (!result.rows.length) return res.status(404).json({ error: "Không tìm thấy" });
+    res.json(result.rows[0]);
   } catch (err) { next(err); }
 });
 
 router.delete("/relief-items/:id", authenticate, authorize("admin"), async (req, res, next) => {
   try {
-    await query("DELETE FROM relief_items WHERE id=@id", { id: parseInt(req.params.id) });
+    await query("DELETE FROM relief_items WHERE id=$1", [parseInt(req.params.id)]);
     res.json({ message: "Đã xóa" });
   } catch (err) { next(err); }
 });
@@ -205,13 +205,13 @@ router.delete("/relief-items/:id", authenticate, authorize("admin"), async (req,
 router.get("/:key", authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      "SELECT * FROM system_config WHERE config_key = @key",
-      { key: req.params.key },
+      "SELECT * FROM system_config WHERE config_key = $1",
+      [req.params.key],
     );
-    if (result.recordset.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy cấu hình" });
     }
-    res.json(result.recordset[0]);
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
@@ -227,62 +227,51 @@ router.put(
       const { config_value, description } = req.body;
 
       const existing = await query(
-        "SELECT id FROM system_config WHERE config_key = @key",
-        { key: req.params.key },
+        "SELECT id FROM system_config WHERE config_key = $1",
+        [req.params.key],
       );
 
-      if (existing.recordset.length === 0) {
+      if (existing.rows.length === 0) {
         // Create new config
         const result = await query(
-          `
-        INSERT INTO system_config (config_key, config_value, description)
-        OUTPUT INSERTED.*
-        VALUES (@key, @value, @desc)
-      `,
-          {
-            key: req.params.key,
-            value: config_value,
-            desc: description || null,
-          },
+          `INSERT INTO system_config (config_key, config_value, description)
+           VALUES ($1, $2, $3)
+           RETURNING *`,
+          [req.params.key, config_value, description || null],
         );
-        return res.status(201).json(result.recordset[0]);
+        return res.status(201).json(result.rows[0]);
       }
 
       // Update existing
-      let sql =
-        "UPDATE system_config SET config_value = @value, updated_at = GETDATE()";
-      const inputs = { key: req.params.key, value: config_value };
+      const updateParams = [config_value, req.params.key];
+      let sql = "UPDATE system_config SET config_value = $1, updated_at = NOW()";
 
       if (description !== undefined) {
-        sql += ", description = @desc";
-        inputs.desc = description;
+        updateParams.splice(1, 0, description); // insert before key
+        sql += `, description = $2 WHERE config_key = $3`;
+      } else {
+        sql += " WHERE config_key = $2";
       }
-      sql += " WHERE config_key = @key";
 
-      await query(sql, inputs);
+      await query(sql, updateParams);
 
       // Log audit
       await query(
-        `
-      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_values, ip_address)
-      VALUES (@userId, 'update_config', 'system_config', @configId, @newValues, @ip)
-    `,
-        {
-          userId: req.user.id,
-          configId: existing.recordset[0].id,
-          newValues: JSON.stringify({
-            key: req.params.key,
-            value: config_value,
-          }),
-          ip: req.ip,
-        },
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_values, ip_address)
+         VALUES ($1, 'update_config', 'system_config', $2, $3, $4)`,
+        [
+          req.user.id,
+          existing.rows[0].id,
+          JSON.stringify({ key: req.params.key, value: config_value }),
+          req.ip,
+        ],
       );
 
       const updated = await query(
-        "SELECT * FROM system_config WHERE config_key = @key",
-        { key: req.params.key },
+        "SELECT * FROM system_config WHERE config_key = $1",
+        [req.params.key],
       );
-      res.json(updated.recordset[0]);
+      res.json(updated.rows[0]);
     } catch (err) {
       next(err);
     }
@@ -296,9 +285,9 @@ router.delete(
   authorize("admin"),
   async (req, res, next) => {
     try {
-      await query("DELETE FROM system_config WHERE config_key = @key", {
-        key: req.params.key,
-      });
+      await query("DELETE FROM system_config WHERE config_key = $1", [
+        req.params.key,
+      ]);
       res.json({ message: "Đã xóa cấu hình" });
     } catch (err) {
       next(err);
