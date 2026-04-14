@@ -1,0 +1,126 @@
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import useAuthStore from './store/authStore';
+import { connectSocket } from './services/socket';
+
+// Pages
+import CitizenHome from './pages/CitizenHome';
+import TrackRequest from './pages/TrackRequest';
+import LoginPage from './pages/LoginPage';
+import Dashboard from './pages/Dashboard';
+import RequestsList from './pages/RequestsList';
+import MissionsList from './pages/MissionsList';
+import TeamsPage from './pages/TeamsPage';
+import ResourcesPage from './pages/ResourcesPage';
+import UsersPage from './pages/UsersPage';
+import NotificationsPage from './pages/NotificationsPage';
+import ReportPage from './pages/ReportPage';
+import TasksPage from './pages/TasksPage';
+import InventoryCheckPage from './pages/InventoryCheckPage';
+import RequestsManagementPage from './pages/RequestsManagementPage';
+import ConfigPage from './pages/ConfigPage';
+import DisasterEventsListPage from './pages/DisasterEventsListPage';
+import DisasterEventPage from './pages/DisasterEventPage';
+
+// Layout
+import DashboardLayout from './components/common/DashboardLayout';
+
+function ProtectedRoute({ children, roles }) {
+  const { user } = useAuthStore();
+  if (!user) return <Navigate to="/login" replace />;
+  if (roles && !roles.includes(user?.role)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
+// Redirect theo role về trang mặc định phù hợp
+function RescueTeamDefaultRoute() {
+  const { user } = useAuthStore();
+  if (user?.role === 'admin') return <Navigate to="/dashboard/users" replace />;
+  if (user?.role === 'warehouse_manager') return <Navigate to="/dashboard/inventory" replace />;
+  if (user?.role === 'rescue_team' && !user?.is_team_leader) {
+    return <Navigate to="/dashboard/missions" replace />;
+  }
+  return <Dashboard />;
+}
+
+export default function App() {
+  const { user } = useAuthStore();
+
+  useEffect(() => {
+    if (user) connectSocket();
+  }, [user]);
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public */}
+        <Route path="/" element={<CitizenHome />} />
+        <Route path="/track" element={<TrackRequest />} />
+        <Route path="/track/:code" element={<TrackRequest />} />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+
+        {/* Protected dashboard */}
+        <Route path="/dashboard" element={
+          <ProtectedRoute><DashboardLayout /></ProtectedRoute>
+        }>
+          <Route index element={<RescueTeamDefaultRoute />} />
+          <Route path="requests" element={
+            <ProtectedRoute roles={['manager','coordinator']}>
+              <RequestsList />
+            </ProtectedRoute>
+          } />
+          <Route path="requests-management" element={
+            <ProtectedRoute roles={['coordinator']}>
+              <RequestsManagementPage />
+            </ProtectedRoute>
+          } />
+          <Route path="missions" element={
+            <ProtectedRoute roles={['manager','coordinator','rescue_team']}>
+              <MissionsList />
+            </ProtectedRoute>
+          } />
+          <Route path="teams" element={
+            <ProtectedRoute roles={['coordinator','rescue_team']}>
+              <TeamsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="tasks" element={
+            <ProtectedRoute roles={['coordinator','manager','rescue_team']}>
+              <TasksPage />
+            </ProtectedRoute>
+          } />
+          <Route path="resources" element={
+            <ProtectedRoute roles={['manager','warehouse_manager','coordinator','rescue_team']}>
+              <ResourcesPage />
+            </ProtectedRoute>
+          } />
+          <Route path="users" element={
+            <ProtectedRoute roles={['admin']}>
+              <UsersPage />
+            </ProtectedRoute>
+          } />
+          <Route path="config" element={
+            <ProtectedRoute roles={['admin']}>
+              <ConfigPage />
+            </ProtectedRoute>
+          } />
+          <Route path="reports" element={
+            <ProtectedRoute roles={['admin','manager','warehouse_manager']}>
+              <ReportPage />
+            </ProtectedRoute>
+          } />
+          <Route path="inventory" element={
+            <ProtectedRoute roles={['manager','warehouse_manager']}>
+              <InventoryCheckPage />
+            </ProtectedRoute>
+          } />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="disasters" element={<DisasterEventsListPage />} />
+          <Route path="disasters/:id" element={<DisasterEventPage />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
