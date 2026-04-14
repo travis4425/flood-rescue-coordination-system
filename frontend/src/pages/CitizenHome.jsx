@@ -194,11 +194,11 @@ export default function CitizenHome() {
         regionAPI.getWeatherAlerts(),
         resourceAPI.getWarehousesMap(),
       ]);
-      setIncidentTypes(types.data || []);
-      setUrgencyLevels(levels.data || []);
-      setProvinces(provs.data || []);
-      setWeatherAlerts(alerts.data || []);
-      setWarehouses(whs.data || []);
+      setIncidentTypes(Array.isArray(types.data) ? types.data : []);
+      setUrgencyLevels(Array.isArray(levels.data) ? levels.data : []);
+      setProvinces(Array.isArray(provs.data) ? provs.data : []);
+      setWeatherAlerts(Array.isArray(alerts.data) ? alerts.data : []);
+      setWarehouses(Array.isArray(whs.data) ? whs.data : []);
     } catch (e) {
       console.error("Failed to load reference data:", e);
     }
@@ -419,7 +419,7 @@ export default function CitizenHome() {
     setSidebarSearching(true);
     try {
       const { data } = await requestAPI.lookupByPhone(val);
-      setSidebarPhoneResults(data);
+      setSidebarPhoneResults(Array.isArray(data) ? data : []);
     } catch {
       setSidebarPhoneResults([]);
     }
