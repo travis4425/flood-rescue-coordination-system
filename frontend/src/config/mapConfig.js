@@ -1,12 +1,12 @@
 // Cấu hình bản đồ chuẩn
 export const MAP_CONFIG = {
-  // CartoDB Voyager — màu sắc đẹp, miễn phí, không watermark VN
-  tileUrl: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  subdomains: ['a', 'b', 'c', 'd'],
-  attribution: '© <a href="https://carto.com/">CARTO</a> | © OpenStreetMap contributors',
+  // OpenStreetMap — dùng tên địa phương (tiếng Việt trong VN), miễn phí
+  tileUrl: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  subdomains: ['a', 'b', 'c'],
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 
-  // Fallback
-  fallbackTileUrl: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png',
+  // Fallback — CartoDB Voyager
+  fallbackTileUrl: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
 
   // Defaults cho Việt Nam
   defaultCenter: [16.0544, 108.2022],
