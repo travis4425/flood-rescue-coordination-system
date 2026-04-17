@@ -695,6 +695,9 @@ export default function CitizenHome() {
           <MapContainer
             center={MAP_CONFIG.defaultCenter}
             zoom={MAP_CONFIG.defaultZoom}
+            minZoom={MAP_CONFIG.minZoom}
+            maxBounds={[[-15, 85], [35, 140]]}
+            maxBoundsViscosity={1.0}
             className="h-full w-full z-10"
             zoomControl={false}
             attributionControl={false}

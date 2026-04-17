@@ -11,7 +11,7 @@ export const MAP_CONFIG = {
   // Defaults cho Việt Nam
   defaultCenter: [16.0544, 108.2022],
   defaultZoom: 6,
-  minZoom: 4,
+  minZoom: 5,
   maxZoom: 18,
 
   // Bounds Việt Nam — bao gồm Hoàng Sa và Trường Sa
