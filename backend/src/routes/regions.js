@@ -7,6 +7,7 @@ router.get('/provinces', RegionController.getProvinces);
 router.get('/incident-types', RegionController.getIncidentTypes);
 router.get('/urgency-levels', RegionController.getUrgencyLevels);
 router.get('/weather-alerts', RegionController.getWeatherAlerts);
+router.get('/weather-alerts/live/:provinceId', RegionController.getLiveWeatherAlerts);
 router.post('/weather-alerts', authenticate, authorize('admin', 'manager'), RegionController.createWeatherAlert);
 router.get('/weather-status', RegionController.getWeatherStatus);
 router.get('/weather-current/:provinceId', RegionController.getCurrentWeather);

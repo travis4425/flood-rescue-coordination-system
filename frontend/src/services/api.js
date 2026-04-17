@@ -151,6 +151,7 @@ export const regionAPI = {
   getIncidentTypes: () => api.get('/regions/incident-types'),
   getUrgencyLevels: () => api.get('/regions/urgency-levels'),
   getWeatherAlerts: (params) => api.get('/regions/weather-alerts', { params }),
+  getWeatherAlertsLive: (provinceId) => api.get(`/regions/weather-alerts/live/${provinceId}`),
   getWeatherStatus: () => api.get('/regions/weather-status'),
   getWeatherCurrent: (provinceId) => api.get(`/regions/weather-current/${provinceId}`),
   getWeatherForecast: (provinceId) => api.get(`/regions/weather-forecast/${provinceId}`),

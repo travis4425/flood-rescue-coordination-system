@@ -150,6 +150,45 @@ const RegionService = {
       alerts: alertsCreated,
       errors: errors.length > 0 ? errors : undefined
     };
+  },
+
+  // Lấy cảnh báo thời tiết live cho 1 tỉnh — kết hợp OpenWeatherMap + DB
+  async getLiveWeatherAlerts(provinceId) {
+    const province = await this.getProvinceById(provinceId);
+    // Luôn lấy alerts từ DB trước (fallback)
+    const dbAlerts = await RegionRepository.findWeatherAlerts({ province_id: provinceId });
+
+    if (!weatherService.isConfigured()) return dbAlerts;
+
+    try {
+      const [current, forecast] = await Promise.all([
+        weatherService.getCurrentWeather(province.latitude, province.longitude),
+        weatherService.getForecast(province.latitude, province.longitude)
+      ]);
+      const risks = weatherService.analyzeFloodRisk(current, forecast.daily);
+
+      const liveAlerts = risks.map(risk => ({
+        id: `live-${risk.type}-${provinceId}`,
+        province_id: province.id,
+        province_name: province.name,
+        alert_type: risk.type,
+        severity: risk.severity,
+        title: `${province.name} — ${risk.title}`,
+        description: risk.description,
+        source: 'OpenWeatherMap (live)',
+        is_live: true,
+        starts_at: new Date().toISOString(),
+      }));
+
+      // Bỏ DB alerts trùng loại với live alerts
+      const liveTypes = new Set(liveAlerts.map(a => a.alert_type));
+      const filteredDb = dbAlerts.filter(a => !liveTypes.has(a.alert_type));
+
+      return [...liveAlerts, ...filteredDb];
+    } catch (err) {
+      logger.warn(`Live weather check failed for province ${provinceId}: ${err.message}`);
+      return dbAlerts;
+    }
   }
 };
 

@@ -162,15 +162,21 @@ export default function CitizenHome() {
     loadMapData();
   }, [selectedProvince]);
 
-  // Load weather khi chọn tỉnh
+  // Load weather + live alerts khi chọn tỉnh
   useEffect(() => {
     if (selectedProvince) {
       regionAPI
         .getWeatherCurrent(selectedProvince)
         .then((res) => setCitizenWeather(res.data))
         .catch(() => setCitizenWeather(null));
+
+      regionAPI
+        .getWeatherAlertsLive(selectedProvince)
+        .then((res) => setWeatherAlerts(Array.isArray(res.data) ? res.data : []))
+        .catch(() => setWeatherAlerts([]));
     } else {
       setCitizenWeather(null);
+      setWeatherAlerts([]);
     }
   }, [selectedProvince]);
 
@@ -187,17 +193,15 @@ export default function CitizenHome() {
 
   async function loadReferenceData() {
     try {
-      const [types, levels, provs, alerts, whs] = await Promise.all([
+      const [types, levels, provs, whs] = await Promise.all([
         regionAPI.getIncidentTypes(),
         regionAPI.getUrgencyLevels(),
         regionAPI.getProvinces(),
-        regionAPI.getWeatherAlerts(),
         resourceAPI.getWarehousesMap(),
       ]);
       setIncidentTypes(Array.isArray(types.data) ? types.data : []);
       setUrgencyLevels(Array.isArray(levels.data) ? levels.data : []);
       setProvinces(Array.isArray(provs.data) ? provs.data : []);
-      setWeatherAlerts(Array.isArray(alerts.data) ? alerts.data : []);
       setWarehouses(Array.isArray(whs.data) ? whs.data : []);
     } catch (e) {
       console.error("Failed to load reference data:", e);

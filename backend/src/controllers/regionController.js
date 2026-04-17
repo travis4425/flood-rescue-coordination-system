@@ -109,6 +109,17 @@ const RegionController = {
         return res.status(503).json({ error: 'Weather API chưa cấu hình', hint: 'Thêm OPENWEATHERMAP_API_KEY vào file .env' });
       next(err);
     }
+  },
+
+  async getLiveWeatherAlerts(req, res, next) {
+    try {
+      const data = await RegionService.getLiveWeatherAlerts(parseInt(req.params.provinceId));
+      res.json(data);
+    } catch (err) {
+      if (err.message === 'PROVINCE_NOT_FOUND')
+        return res.status(404).json({ error: 'Không tìm thấy tỉnh/thành.' });
+      next(err);
+    }
   }
 };
 
