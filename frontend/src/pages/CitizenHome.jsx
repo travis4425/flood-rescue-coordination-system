@@ -512,14 +512,18 @@ export default function CitizenHome() {
       </header>
 
       {/* Weather Alert Banner */}
-      {selectedProvince && weatherAlerts.length === 0 && citizenWeather && (
+      {selectedProvince && weatherAlerts.length === 0 && (
         <div className="bg-gradient-to-r from-green-600 to-teal-600 text-white px-4 py-1.5 text-sm flex items-center gap-2">
           <span>✅</span>
-          <span>
-            <strong>{citizenWeather.province_name}</strong> — Thời tiết bình thường.
-            Nhiệt độ {citizenWeather.temperature}°C, độ ẩm {citizenWeather.humidity}%,
-            gió {citizenWeather.wind_speed} m/s. Không có cảnh báo thiên tai đặc biệt.
-          </span>
+          {citizenWeather ? (
+            <span>
+              <strong>{citizenWeather.province_name}</strong> — Thời tiết bình thường.
+              Nhiệt độ {citizenWeather.temperature}°C, độ ẩm {citizenWeather.humidity}%,
+              gió {citizenWeather.wind_speed} m/s. Không có cảnh báo thiên tai đặc biệt.
+            </span>
+          ) : (
+            <span>Không có cảnh báo thiên tai đặc biệt tại khu vực đã chọn.</span>
+          )}
         </div>
       )}
       {weatherAlerts.length > 0 && (
