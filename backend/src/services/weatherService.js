@@ -1,8 +1,8 @@
 const https = require("https");
 const logger = require("../config/logger");
 
-const API_KEY = process.env.OPENWEATHERMAP_API_KEY || "";
 const BASE_URL = "https://api.openweathermap.org/data/2.5";
+const getApiKey = () => process.env.OPENWEATHERMAP_API_KEY || "";
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
@@ -24,7 +24,8 @@ function httpGet(url) {
   });
 }
 function isConfigured() {
-  return API_KEY && API_KEY.length > 0 && API_KEY !== "your_key_here";
+  const key = getApiKey();
+  return key && key.length > 0 && key !== "your_key_here";
 }
 
 async function getCurrentWeather(lat, lon) {
@@ -32,7 +33,7 @@ async function getCurrentWeather(lat, lon) {
     throw new Error("OPENWEATHERMAP_API_KEY chưa được cấu hình trong .env");
   }
 
-  const url = `${BASE_URL}/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=vi`;
+  const url = `${BASE_URL}/weather?lat=${lat}&lon=${lon}&appid=${getApiKey()}&units=metric&lang=vi`;
 
   try {
     const data = await httpGet(url);
@@ -72,7 +73,7 @@ async function getForecast(lat, lon) {
     throw new Error("OPENWEATHERMAP_API_KEY chưa được cấu hình trong .env");
   }
 
-  const url = `${BASE_URL}/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=vi`;
+  const url = `${BASE_URL}/forecast?lat=${lat}&lon=${lon}&appid=${getApiKey()}&units=metric&lang=vi`;
 
   try {
     const data = await httpGet(url);
