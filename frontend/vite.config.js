@@ -26,10 +26,11 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/regions'),
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'api-regions',
-              expiration: { maxAgeSeconds: 3600 },
+              networkTimeoutSeconds: 5,
+              expiration: { maxAgeSeconds: 300 },
             },
           },
           {
