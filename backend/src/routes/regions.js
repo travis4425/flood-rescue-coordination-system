@@ -4,6 +4,7 @@ const { authenticate, authorize } = require('../middlewares/auth');
 
 router.get('/', RegionController.getRegions);
 router.get('/provinces', RegionController.getProvinces);
+router.get('/disaster-types', RegionController.getDisasterTypes);
 router.get('/incident-types', RegionController.getIncidentTypes);
 router.get('/urgency-levels', RegionController.getUrgencyLevels);
 router.get('/weather-alerts', RegionController.getWeatherAlerts);

@@ -11,12 +11,31 @@ const useAuthStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const { data } = await authAPI.login({ username, password });
-      // Chỉ lưu user object — token được server set qua httpOnly cookie
+      // MFA challenge — chưa đăng nhập hoàn toàn
+      if (data.mfaRequired || data.mfaSetupRequired) {
+        set({ loading: false });
+        return data;
+      }
+      // Đăng nhập thành công
       localStorage.setItem('user', JSON.stringify(data.user));
       set({ user: data.user, loading: false });
       return data;
     } catch (err) {
       const msg = err.response?.data?.error || 'Đăng nhập thất bại';
+      set({ error: msg, loading: false });
+      throw new Error(msg);
+    }
+  },
+
+  loginWithMfa: async (token) => {
+    set({ loading: true, error: null });
+    try {
+      const { data } = await authAPI.mfaVerify(token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      set({ user: data.user, loading: false });
+      return data;
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Mã xác thực không đúng';
       set({ error: msg, loading: false });
       throw new Error(msg);
     }

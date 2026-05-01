@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { MAP_CONFIG } from "../config/mapConfig";
 import { Link } from "react-router-dom";
 import {
@@ -104,8 +105,10 @@ const URGENCY_MIN_FLOOD = {
 };
 
 export default function CitizenHome() {
+  const { t } = useTranslation();
   const [requests, setRequests] = useState([]);
   const [incidentTypes, setIncidentTypes] = useState([]);
+  const [disasterTypes, setDisasterTypes] = useState([]);
   const [urgencyLevels, setUrgencyLevels] = useState([]);
   const [provinces, setProvinces] = useState([]);
   const [weatherAlerts, setWeatherAlerts] = useState([]);
@@ -147,6 +150,7 @@ export default function CitizenHome() {
     geo_province_name: "",
     geo_district_name: "",
     disaster_type_code: "",
+    disaster_type_id: "",
   });
   const [formImages, setFormImages] = useState([]);
   const [pickerLocation, setPickerLocation] = useState(null);
@@ -193,13 +197,15 @@ export default function CitizenHome() {
 
   async function loadReferenceData() {
     try {
-      const [types, levels, provs, whs] = await Promise.all([
+      const [types, dTypes, levels, provs, whs] = await Promise.all([
         regionAPI.getIncidentTypes(),
+        regionAPI.getDisasterTypes(),
         regionAPI.getUrgencyLevels(),
         regionAPI.getProvinces(),
         resourceAPI.getWarehousesMap(),
       ]);
       setIncidentTypes(Array.isArray(types.data) ? types.data : []);
+      setDisasterTypes(Array.isArray(dTypes.data) ? dTypes.data : []);
       setUrgencyLevels(Array.isArray(levels.data) ? levels.data : []);
       setProvinces(Array.isArray(provs.data) ? provs.data : []);
       setWarehouses(Array.isArray(whs.data) ? whs.data : []);
@@ -344,10 +350,14 @@ export default function CitizenHome() {
     if (!form.urgency_level_id) return alert("Vui lòng chọn mức độ khẩn cấp");
     if (!form.citizen_name.trim()) return alert("Vui lòng nhập họ tên người gửi");
     if (!/^(0[35789])[0-9]{8}$/.test(form.citizen_phone.trim())) return alert("Số điện thoại không hợp lệ (VD: 0901234567)");
-    // Auto-pick incident_type_id based on disaster type if not set
+    // Resolve disaster_type_id từ disaster_type_code
+    if (!form.disaster_type_id && disasterTypes.length > 0) {
+      const match = disasterTypes.find(d => d.code === form.disaster_type_code);
+      if (match) form.disaster_type_id = String(match.id);
+    }
+    // Fallback: default incident_type_id nếu chưa chọn
     if (!form.incident_type_id && incidentTypes.length > 0) {
-      const match = incidentTypes.find(t => t.name?.toLowerCase().includes(form.disaster_type_code)) || incidentTypes[0];
-      if (match) form.incident_type_id = String(match.id);
+      form.incident_type_id = String(incidentTypes[0].id);
     }
 
     // Offline: queue request and show toast
@@ -362,7 +372,7 @@ export default function CitizenHome() {
           address: "", incident_type_id: "", urgency_level_id: "",
           description: "", victim_count: "1", support_type: "",
           flood_severity: "2", geo_province_name: "", geo_district_name: "",
-          disaster_type_code: "",
+          disaster_type_code: "", disaster_type_id: "",
         });
         setFormImages([]);
         setPickerLocation(null);
@@ -602,7 +612,7 @@ export default function CitizenHome() {
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Nhập mã (RQ-...) hoặc số điện thoại"
+                placeholder={t('citizen.search_placeholder')}
                 value={trackingCode}
                 onChange={(e) => { setTrackingCode(e.target.value); if (!e.target.value) setSidebarPhoneResults(null); }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSidebarSearch()}
@@ -1003,7 +1013,7 @@ export default function CitizenHome() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Nhập mã (RQ-2024-...)"
+                      placeholder={t('citizen.track_code_placeholder')}
                       value={trackingCode}
                       onChange={(e) => setTrackingCode(e.target.value)}
                       className="flex-1 text-sm input-field py-2"
@@ -1029,7 +1039,7 @@ export default function CitizenHome() {
                   <div className="flex gap-2">
                     <input
                       type="tel"
-                      placeholder="Nhập số điện thoại..."
+                      placeholder={t('citizen.phone_lookup_placeholder')}
                       value={lookupPhone}
                       onChange={(e) => setLookupPhone(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && lookupByPhone()}
@@ -1212,7 +1222,10 @@ export default function CitizenHome() {
                         <button
                           key={dt.code}
                           type="button"
-                          onClick={() => setForm(f => ({ ...f, disaster_type_code: dt.code }))}
+                          onClick={() => {
+                            const match = disasterTypes.find(d => d.code === dt.code);
+                            setForm(f => ({ ...f, disaster_type_code: dt.code, disaster_type_id: match ? String(match.id) : '' }));
+                          }}
                           className="flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition text-center"
                           style={{
                             background: selected ? dt.bg : '#f9fafb',
@@ -1300,7 +1313,7 @@ export default function CitizenHome() {
                   <input
                     type="text"
                     className="input-field text-sm"
-                    placeholder="VD: 45 Nguyễn Huệ, phường 1..."
+                    placeholder={t('citizen.address_placeholder')}
                     maxLength={100}
                     value={form.address}
                     onChange={(e) =>
@@ -1417,13 +1430,13 @@ export default function CitizenHome() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Họ tên <span className="text-red-500">*</span></label>
-                        <input type="text" className="input-field text-sm" placeholder="Họ và tên"
+                        <input type="text" className="input-field text-sm" placeholder={t('citizen.name_placeholder')}
                           value={form.citizen_name}
                           onChange={e => { if (/^[a-zA-ZÀ-ỹ\s]*$/.test(e.target.value)) setForm(f => ({ ...f, citizen_name: e.target.value })); }} />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Số điện thoại <span className="text-red-500">*</span></label>
-                        <input type="tel" className="input-field text-sm" placeholder="09xx xxx xxx"
+                        <input type="tel" className="input-field text-sm" placeholder={t('citizen.phone_placeholder')}
                           value={form.citizen_phone}
                           onChange={e => setForm(f => ({ ...f, citizen_phone: e.target.value }))} />
                       </div>

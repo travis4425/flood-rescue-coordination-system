@@ -34,6 +34,11 @@ const RegionRepository = {
     return result.rows;
   },
 
+  async findDisasterTypes() {
+    const result = await query('SELECT id, code, name_vi, name_en, icon, color FROM disaster_types WHERE is_active = true ORDER BY id');
+    return result.rows;
+  },
+
   async findUrgencyLevels() {
     const result = await query('SELECT * FROM urgency_levels ORDER BY priority_score DESC');
     return result.rows;

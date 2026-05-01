@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { userAPI, regionAPI, teamAPI } from '../services/api';
+import { userAPI, regionAPI, teamAPI, authAPI } from '../services/api';
 import useAuthStore from '../store/authStore';
 import { useTranslation } from 'react-i18next';
 import { ROLE_LABELS, formatDate } from '../utils/helpers';
-import { Plus, Search, Edit2, Key, UserCheck, UserX, X, Save, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit2, Key, UserCheck, UserX, X, Save, ChevronLeft, ChevronRight, ShieldOff } from 'lucide-react';
 
 const ROLE_BADGE = {
   admin: 'bg-red-100 text-red-700',
@@ -144,6 +144,15 @@ export default function UsersPage() {
     } catch (err) { alert('Lỗi: ' + err.message); }
   };
 
+  const resetMfa = async (u) => {
+    if (!['admin', 'manager'].includes(u.role)) return;
+    if (!window.confirm(`Đặt lại MFA cho ${u.full_name}? Họ sẽ phải thiết lập lại khi đăng nhập.`)) return;
+    try {
+      await authAPI.mfaReset(u.id);
+      alert('Đã đặt lại MFA thành công.');
+    } catch (err) { alert('Lỗi: ' + (err.response?.data?.error || err.message)); }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -226,6 +235,10 @@ export default function UsersPage() {
                         <>
                           <button onClick={() => resetPassword(u)} title="Reset mật khẩu"
                             className="p-1.5 hover:bg-gray-100 rounded"><Key className="w-3.5 h-3.5 text-gray-500" /></button>
+                          {['admin', 'manager'].includes(u.role) && (
+                            <button onClick={() => resetMfa(u)} title="Reset MFA"
+                              className="p-1.5 hover:bg-gray-100 rounded"><ShieldOff className="w-3.5 h-3.5 text-orange-500" /></button>
+                          )}
                           <button onClick={() => toggleActive(u)} title={u.is_active ? 'Khóa' : 'Mở khóa'}
                             className="p-1.5 hover:bg-gray-100 rounded">
                             {u.is_active ? <UserX className="w-3.5 h-3.5 text-red-500" /> : <UserCheck className="w-3.5 h-3.5 text-green-500" />}

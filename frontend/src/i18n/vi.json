@@ -80,6 +80,39 @@
     "next":     "Tiếp theo",
     "logout":   "Đăng xuất"
   },
+  "login": {
+    "title":               "Đăng nhập",
+    "subtitle":            "Truy cập hệ thống quản lý thiên tai quốc gia",
+    "mfa_verify_title":    "Xác thực 2 bước",
+    "mfa_setup_title":     "Thiết lập bảo mật 2 lớp",
+    "mfa_verify_desc":     "Nhập mã 6 chữ số từ ứng dụng xác thực của bạn",
+    "mfa_setup_desc":      "Quét mã QR bằng Google Authenticator hoặc Authy",
+    "username_label":      "Tên đăng nhập",
+    "password_label":      "Mật khẩu",
+    "mfa_code_label":      "Mã xác thực (TOTP)",
+    "mfa_confirm_label":   "Mã xác nhận",
+    "submit":              "Đăng nhập",
+    "confirm_btn":         "Xác nhận",
+    "activate_mfa":        "Kích hoạt MFA",
+    "back_to_login":       "← Quay lại đăng nhập",
+    "back_to_citizen":     "← Về trang chủ công dân",
+    "mfa_setup_instruction": "Quét mã QR bằng Google Authenticator hoặc Authy, sau đó nhập mã 6 số bên dưới để xác nhận."
+  },
+  "citizen": {
+    "search_placeholder":     "Nhập mã (RQ-...) hoặc số điện thoại",
+    "track_code_placeholder": "Nhập mã (RQ-2024-...)",
+    "phone_lookup_placeholder":"Nhập số điện thoại...",
+    "address_placeholder":    "VD: 45 Nguyễn Huệ, phường 1...",
+    "name_placeholder":       "Họ và tên",
+    "phone_placeholder":      "09xx xxx xxx"
+  },
+  "track": {
+    "code_placeholder":       "VD: RQ-2024-A1B2C3",
+    "name_placeholder":       "Tên người gửi",
+    "phone_placeholder":      "09xx xxx xxx",
+    "address_placeholder":    "Số nhà, đường, phường/xã...",
+    "description_placeholder":"Mô tả tình huống, nhu cầu hỗ trợ..."
+  },
   "dashboard": {
     "title":            "Tổng quan hệ thống",
     "activeDisasters":  "Thiên tai đang xảy ra",
@@ -90,7 +123,18 @@
     "recentEvents":     "Sự kiện mới nhất",
     "requestTrend":     "Xu hướng yêu cầu 24h",
     "disasterBreakdown":"Phân loại thiên tai",
-    "topProvinces":     "Top tỉnh nhiều incidents"
+    "topProvinces":     "Top tỉnh nhiều incidents",
+    "kpi": {
+      "total_vehicles":  "Tổng phương tiện",
+      "vehicles_in_use": "Đang sử dụng",
+      "warehouses":      "Kho hàng",
+      "inventory_types": "Loại hàng tồn kho",
+      "in_progress":     "Đang cứu hộ",
+      "completed":       "Hoàn thành",
+      "victims":         "Nạn nhân",
+      "rescued":         "Đã cứu",
+      "total_requests":  "Tổng yêu cầu"
+    }
   },
   "request": {
     "create":           "Gửi yêu cầu cứu trợ",

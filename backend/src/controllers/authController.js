@@ -4,11 +4,65 @@ const UserRepository = require('../repositories/userRepository');
 const AuthController = {
   async login(req, res, next) {
     try {
-      const user = await AuthService.login(req.body.username, req.body.password, res);
-      res.json({ user, message: 'Đăng nhập thành công' });
+      const result = await AuthService.login(req.body.username, req.body.password, res);
+      if (result.status === 'MFA_REQUIRED') {
+        return res.json({ mfaRequired: true });
+      }
+      if (result.status === 'MFA_SETUP_REQUIRED') {
+        return res.json({ mfaSetupRequired: true });
+      }
+      res.json({ user: result.user, message: 'Đăng nhập thành công' });
     } catch (err) {
       if (err.message === 'INVALID_CREDENTIALS')
         return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng.' });
+      next(err);
+    }
+  },
+
+  async mfaSetup(req, res, next) {
+    try {
+      const result = await AuthService.mfaSetup(req);
+      res.json(result);
+    } catch (err) {
+      if (err.message === 'MFA_PENDING_MISSING' || err.message === 'MFA_PENDING_INVALID')
+        return res.status(401).json({ error: 'Phiên xác thực không hợp lệ hoặc đã hết hạn.' });
+      next(err);
+    }
+  },
+
+  async mfaConfirmSetup(req, res, next) {
+    try {
+      const result = await AuthService.mfaConfirmSetup(req, req.body.token, res);
+      res.json({ user: result.user, message: 'Thiết lập MFA thành công. Đăng nhập thành công.' });
+    } catch (err) {
+      if (err.message === 'MFA_TOKEN_INVALID')
+        return res.status(400).json({ error: 'Mã xác thực không đúng. Vui lòng thử lại.' });
+      if (err.message === 'MFA_PENDING_MISSING' || err.message === 'MFA_PENDING_INVALID')
+        return res.status(401).json({ error: 'Phiên xác thực không hợp lệ hoặc đã hết hạn.' });
+      next(err);
+    }
+  },
+
+  async mfaVerify(req, res, next) {
+    try {
+      const result = await AuthService.mfaVerify(req, req.body.token, res);
+      res.json({ user: result.user, message: 'Đăng nhập thành công' });
+    } catch (err) {
+      if (err.message === 'MFA_TOKEN_INVALID')
+        return res.status(400).json({ error: 'Mã xác thực không đúng. Vui lòng thử lại.' });
+      if (err.message === 'MFA_PENDING_MISSING' || err.message === 'MFA_PENDING_INVALID')
+        return res.status(401).json({ error: 'Phiên xác thực không hợp lệ hoặc đã hết hạn.' });
+      next(err);
+    }
+  },
+
+  async mfaReset(req, res, next) {
+    try {
+      await AuthService.mfaReset(parseInt(req.params.id));
+      res.json({ message: 'Đặt lại MFA thành công.' });
+    } catch (err) {
+      if (err.message === 'NOT_FOUND')
+        return res.status(404).json({ error: 'Không tìm thấy người dùng.' });
       next(err);
     }
   },
@@ -38,10 +92,13 @@ const AuthController = {
       const user = await UserRepository.findById(req.user.id);
       if (!user) return res.status(404).json({ error: 'Người dùng không tồn tại.' });
 
-      // Kiểm tra team leader cho rescue_team
       if (user.role === 'rescue_team') {
         user.is_team_leader = await UserRepository.isTeamLeader(user.id);
       }
+      // Trả về trạng thái MFA để frontend hiển thị badge
+      const mfaData = await UserRepository.getMfaData(user.id);
+      user.mfa_enabled = mfaData?.mfa_enabled ?? false;
+
       res.json(user);
     } catch (err) {
       next(err);

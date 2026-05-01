@@ -65,10 +65,19 @@ CREATE TABLE IF NOT EXISTS disaster_workflow_phases (
   description_en   TEXT
 );
 
--- Add FK now that phases table exists
-ALTER TABLE disaster_events
-  ADD CONSTRAINT IF NOT EXISTS fk_current_phase
-  FOREIGN KEY (current_phase_id) REFERENCES disaster_workflow_phases(id);
+-- Add FK now that phases table exists (idempotent check)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'fk_current_phase'
+      AND table_name = 'disaster_events'
+  ) THEN
+    ALTER TABLE disaster_events
+      ADD CONSTRAINT fk_current_phase
+      FOREIGN KEY (current_phase_id) REFERENCES disaster_workflow_phases(id);
+  END IF;
+END $$;
 
 -- Seed phases for flood / typhoon / tsunami
 INSERT INTO disaster_workflow_phases (disaster_type_id, phase_order, code, name_vi, name_en)

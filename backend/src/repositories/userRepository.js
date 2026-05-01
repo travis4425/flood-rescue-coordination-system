@@ -133,6 +133,36 @@ const UserRepository = {
       [userId]
     );
     return result.rows.length > 0;
+  },
+
+  // MFA
+  async getMfaData(id) {
+    const result = await query(
+      'SELECT mfa_secret, mfa_enabled FROM users WHERE id = $1',
+      [id]
+    );
+    return result.rows[0] || null;
+  },
+
+  async setMfaSecret(id, secret) {
+    await query(
+      'UPDATE users SET mfa_secret = $1, updated_at = NOW() WHERE id = $2',
+      [secret, id]
+    );
+  },
+
+  async enableMfa(id) {
+    await query(
+      'UPDATE users SET mfa_enabled = true, updated_at = NOW() WHERE id = $1',
+      [id]
+    );
+  },
+
+  async resetMfa(id) {
+    await query(
+      'UPDATE users SET mfa_secret = NULL, mfa_enabled = false, updated_at = NOW() WHERE id = $1',
+      [id]
+    );
   }
 };
 

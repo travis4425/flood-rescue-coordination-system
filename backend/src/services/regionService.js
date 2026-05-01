@@ -28,6 +28,14 @@ const RegionService = {
     return data;
   },
 
+  async getDisasterTypes() {
+    const cached = cache.get('disaster_types');
+    if (cached) return cached;
+    const data = await RegionRepository.findDisasterTypes();
+    cache.set('disaster_types', data, 3600);
+    return data;
+  },
+
   async getUrgencyLevels() {
     const cached = cache.get('regions:urgency_levels');
     if (cached) return cached;

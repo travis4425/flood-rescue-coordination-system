@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const { query } = require("../config/database");
 const { authenticate, authorize } = require("../middlewares/auth");
 const { getPagination, formatResponse } = require("../utils/helpers");
+const AuthController = require("../controllers/authController");
 
 // GET /api/users
 router.get(
@@ -158,6 +159,9 @@ router.put(
     }
   },
 );
+
+// PUT /api/users/:id/reset-mfa — Admin only
+router.put("/:id/reset-mfa", authenticate, authorize("admin"), AuthController.mfaReset);
 
 // PUT /api/users/:id/reset-password
 router.put(

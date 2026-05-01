@@ -1,9 +1,12 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const speakeasy = require('speakeasy');
 const UserRepository = require('../repositories/userRepository');
 const RefreshTokenRepository = require('../repositories/refreshTokenRepository');
 const logger = require('../config/logger');
+
+const MFA_ROLES = ['admin', 'manager'];
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -27,6 +30,31 @@ const AuthService = {
       throw Object.assign(new Error('INVALID_CREDENTIALS'), { status: 401 });
     }
 
+    // Kiểm tra MFA bắt buộc cho admin và manager
+    if (MFA_ROLES.includes(user.role)) {
+      const mfaData = await UserRepository.getMfaData(user.id);
+      const pendingToken = jwt.sign(
+        { id: user.id, mfaPending: true },
+        process.env.JWT_SECRET,
+        { expiresIn: '5m' }
+      );
+      res.cookie('mfa_pending', pendingToken, {
+        ...COOKIE_OPTIONS,
+        maxAge: 5 * 60 * 1000
+      });
+
+      if (!mfaData?.mfa_enabled) {
+        logger.info(`User ${user.username} (${user.role}) requires MFA setup`);
+        return { status: 'MFA_SETUP_REQUIRED' };
+      }
+      logger.info(`User ${user.username} (${user.role}) requires MFA verification`);
+      return { status: 'MFA_REQUIRED' };
+    }
+
+    return this._completeLogin(user, res);
+  },
+
+  async _completeLogin(user, res) {
     const payload = {
       id: user.id,
       username: user.username,
@@ -61,7 +89,88 @@ const AuthService = {
     }
 
     logger.info(`User ${user.username} (${user.role}) logged in`);
-    return sanitized;
+    return { status: 'OK', user: sanitized };
+  },
+
+  // Lấy mfa_pending cookie, trả về user id nếu hợp lệ
+  _verifyMfaPendingCookie(req) {
+    const token = req.cookies?.mfa_pending;
+    if (!token) throw Object.assign(new Error('MFA_PENDING_MISSING'), { status: 401 });
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (!decoded.mfaPending) throw new Error();
+      return decoded.id;
+    } catch {
+      throw Object.assign(new Error('MFA_PENDING_INVALID'), { status: 401 });
+    }
+  },
+
+  async mfaSetup(req) {
+    const userId = this._verifyMfaPendingCookie(req);
+    const user = await UserRepository.findByUsername(
+      (await UserRepository.findById(userId))?.username
+    );
+    if (!user) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+
+    const secret = speakeasy.generateSecret({
+      name: `VDRCS (${user.username})`,
+      issuer: 'VDRCS'
+    });
+
+    await UserRepository.setMfaSecret(userId, secret.base32);
+
+    return { otpauthUrl: secret.otpauth_url };
+  },
+
+  async mfaConfirmSetup(req, token, res) {
+    const userId = this._verifyMfaPendingCookie(req);
+    const mfaData = await UserRepository.getMfaData(userId);
+    if (!mfaData?.mfa_secret) {
+      throw Object.assign(new Error('MFA_SECRET_MISSING'), { status: 400 });
+    }
+
+    const valid = speakeasy.totp.verify({
+      secret: mfaData.mfa_secret,
+      encoding: 'base32',
+      token,
+      window: 1
+    });
+
+    if (!valid) throw Object.assign(new Error('MFA_TOKEN_INVALID'), { status: 400 });
+
+    await UserRepository.enableMfa(userId);
+    res.clearCookie('mfa_pending');
+
+    const user = await UserRepository.findById(userId);
+    return this._completeLogin(user, res);
+  },
+
+  async mfaVerify(req, token, res) {
+    const userId = this._verifyMfaPendingCookie(req);
+    const mfaData = await UserRepository.getMfaData(userId);
+    if (!mfaData?.mfa_secret || !mfaData?.mfa_enabled) {
+      throw Object.assign(new Error('MFA_NOT_CONFIGURED'), { status: 400 });
+    }
+
+    const valid = speakeasy.totp.verify({
+      secret: mfaData.mfa_secret,
+      encoding: 'base32',
+      token,
+      window: 1
+    });
+
+    if (!valid) throw Object.assign(new Error('MFA_TOKEN_INVALID'), { status: 400 });
+
+    res.clearCookie('mfa_pending');
+    const user = await UserRepository.findById(userId);
+    return this._completeLogin(user, res);
+  },
+
+  async mfaReset(targetUserId) {
+    const user = await UserRepository.findById(targetUserId);
+    if (!user) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    await UserRepository.resetMfa(targetUserId);
+    logger.info(`MFA reset for user ${user.username} (id: ${targetUserId})`);
   },
 
   async refresh(refreshToken, res) {

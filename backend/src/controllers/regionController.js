@@ -23,6 +23,13 @@ const RegionController = {
     } catch (err) { next(err); }
   },
 
+  async getDisasterTypes(req, res, next) {
+    try {
+      const data = await RegionService.getDisasterTypes();
+      res.json(data);
+    } catch (err) { next(err); }
+  },
+
   async getUrgencyLevels(req, res, next) {
     try {
       const data = await RegionService.getUrgencyLevels();

@@ -80,6 +80,39 @@
     "next":     "Next",
     "logout":   "Logout"
   },
+  "login": {
+    "title":               "Sign In",
+    "subtitle":            "Access the national disaster management system",
+    "mfa_verify_title":    "Two-Factor Authentication",
+    "mfa_setup_title":     "Set Up Two-Factor Security",
+    "mfa_verify_desc":     "Enter the 6-digit code from your authenticator app",
+    "mfa_setup_desc":      "Scan the QR code with Google Authenticator or Authy",
+    "username_label":      "Username",
+    "password_label":      "Password",
+    "mfa_code_label":      "Authentication Code (TOTP)",
+    "mfa_confirm_label":   "Confirmation Code",
+    "submit":              "Sign In",
+    "confirm_btn":         "Confirm",
+    "activate_mfa":        "Activate MFA",
+    "back_to_login":       "← Back to sign in",
+    "back_to_citizen":     "← Back to citizen portal",
+    "mfa_setup_instruction": "Scan the QR code with Google Authenticator or Authy, then enter the 6-digit code below to confirm."
+  },
+  "citizen": {
+    "search_placeholder":     "Enter tracking code (RQ-...) or phone number",
+    "track_code_placeholder": "Enter code (RQ-2024-...)",
+    "phone_lookup_placeholder":"Enter phone number...",
+    "address_placeholder":    "E.g. 45 Nguyen Hue St, Ward 1...",
+    "name_placeholder":       "Full name",
+    "phone_placeholder":      "09xx xxx xxx"
+  },
+  "track": {
+    "code_placeholder":       "E.g. RQ-2024-A1B2C3",
+    "name_placeholder":       "Sender name",
+    "phone_placeholder":      "09xx xxx xxx",
+    "address_placeholder":    "House number, street, ward...",
+    "description_placeholder":"Describe the situation and support needed..."
+  },
   "dashboard": {
     "title":            "System Overview",
     "activeDisasters":  "Active Disasters",
@@ -90,7 +123,18 @@
     "recentEvents":     "Recent Events",
     "requestTrend":     "Request Trend 24h",
     "disasterBreakdown":"Disaster Breakdown",
-    "topProvinces":     "Top Provinces by Incidents"
+    "topProvinces":     "Top Provinces by Incidents",
+    "kpi": {
+      "total_vehicles":  "Total Vehicles",
+      "vehicles_in_use": "In Use",
+      "warehouses":      "Warehouses",
+      "inventory_types": "Inventory Types",
+      "in_progress":     "In Progress",
+      "completed":       "Completed",
+      "victims":         "Victims",
+      "rescued":         "Rescued",
+      "total_requests":  "Total Requests"
+    }
   },
   "request": {
     "create":           "Submit Aid Request",

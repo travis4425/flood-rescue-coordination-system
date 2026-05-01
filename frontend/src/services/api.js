@@ -40,6 +40,10 @@ export const authAPI = {
   refresh: () => api.post('/auth/refresh'),
   getMe: () => api.get('/auth/me'),
   changePassword: (data) => api.put('/auth/password', data),
+  mfaSetup: () => api.get('/auth/mfa/setup'),
+  mfaConfirmSetup: (token) => api.post('/auth/mfa/confirm-setup', { token }),
+  mfaVerify: (token) => api.post('/auth/mfa/verify', { token }),
+  mfaReset: (userId) => api.put(`/users/${userId}/reset-mfa`),
 };
 
 // === REQUESTS ===
@@ -148,6 +152,7 @@ export const resourceAPI = {
 export const regionAPI = {
   getAll: () => api.get('/regions'),
   getProvinces: (params) => api.get('/regions/provinces', { params }),
+  getDisasterTypes: () => api.get('/regions/disaster-types'),
   getIncidentTypes: () => api.get('/regions/incident-types'),
   getUrgencyLevels: () => api.get('/regions/urgency-levels'),
   getWeatherAlerts: (params) => api.get('/regions/weather-alerts', { params }),

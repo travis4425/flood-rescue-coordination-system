@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Search, MapPin, Clock, Users, Phone, CheckCircle, AlertTriangle,
          Truck, Waves, ArrowLeft, Navigation, FileText, Edit2, X, Save, UserX, Shield } from 'lucide-react';
 import { requestAPI, regionAPI } from '../services/api';
@@ -39,6 +40,7 @@ function getStepIndex(trackingStatus) {
 }
 
 export default function TrackRequest() {
+  const { t } = useTranslation();
   const { code } = useParams();
   const [trackingCode, setTrackingCode] = useState(code || '');
   const [request, setRequest] = useState(null);
@@ -124,7 +126,7 @@ export default function TrackRequest() {
               value={trackingCode}
               onChange={(e) => setTrackingCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === 'Enter' && searchRequest()}
-              placeholder="VD: RQ-2024-A1B2C3"
+              placeholder={t('track.code_placeholder')}
               className="flex-1 input-field text-lg font-mono"
             />
             <button
@@ -395,6 +397,7 @@ export default function TrackRequest() {
 }
 
 function EditRequestModal({ request, incidentTypes, urgencyLevels, onClose, onSaved }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     citizen_name: request.citizen_name || '',
     citizen_phone: request.citizen_phone || '',
@@ -451,12 +454,12 @@ function EditRequestModal({ request, incidentTypes, urgencyLevels, onClose, onSa
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên</label>
-              <input type="text" className="input-field" placeholder="Tên người gửi"
+              <input type="text" className="input-field" placeholder={t('track.name_placeholder')}
                 value={form.citizen_name} onChange={e => setForm(f => ({ ...f, citizen_name: e.target.value }))} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
-              <input type="tel" className="input-field" placeholder="09xx xxx xxx"
+              <input type="tel" className="input-field" placeholder={t('track.phone_placeholder')}
                 value={form.citizen_phone} onChange={e => setForm(f => ({ ...f, citizen_phone: e.target.value }))} />
             </div>
           </div>
@@ -464,7 +467,7 @@ function EditRequestModal({ request, incidentTypes, urgencyLevels, onClose, onSa
           {/* Address */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Địa chỉ chi tiết</label>
-            <input type="text" className="input-field" placeholder="Số nhà, đường, phường/xã..."
+            <input type="text" className="input-field" placeholder={t('track.address_placeholder')}
               value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
           </div>
 
@@ -515,7 +518,7 @@ function EditRequestModal({ request, incidentTypes, urgencyLevels, onClose, onSa
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả tình huống</label>
             <textarea rows={3} className="input-field resize-none"
-              placeholder="Mô tả tình huống, nhu cầu hỗ trợ..."
+              placeholder={t('track.description_placeholder')}
               value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
           </div>
 

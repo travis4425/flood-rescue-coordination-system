@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Shield, Eye, EyeOff, AlertCircle, Loader2, ChevronRight } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { useTranslation } from 'react-i18next';
 import useAuthStore from '../store/authStore';
+import { authAPI } from '../services/api';
 
 // SVG viewport & projection constants
 // lon: 102→117 (include Trường Sa), lat: 8→23.5
@@ -132,25 +135,58 @@ function VietnamMapSVG() {
   );
 }
 
+// screen: 'login' | 'mfa_verify' | 'mfa_setup'
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
-  const [mfaCode, setMfaCode]   = useState('');
-  const [needMfa, setNeedMfa]   = useState(false);
-  const { login, loading, error } = useAuthStore();
+  const [screen, setScreen] = useState('login');
+  const [mfaCode, setMfaCode] = useState('');
+  const [otpauthUrl, setOtpauthUrl] = useState('');
+  const [setupError, setSetupError] = useState('');
+  const [setupLoading, setSetupLoading] = useState(false);
+  const { login, loginWithMfa, loading, error } = useAuthStore();
   const navigate = useNavigate();
 
-  async function handleSubmit(e) {
+  // Khi chuyển sang màn setup, fetch QR code
+  useEffect(() => {
+    if (screen !== 'mfa_setup') return;
+    authAPI.mfaSetup()
+      .then(({ data }) => setOtpauthUrl(data.otpauthUrl))
+      .catch(() => setSetupError('Không thể tải mã QR. Vui lòng thử lại.'));
+  }, [screen]);
+
+  async function handleLogin(e) {
     e.preventDefault();
     try {
-      const result = await login(username, password, needMfa ? mfaCode : undefined);
-      if (result?.requiresMFA) {
-        setNeedMfa(true);
-        return;
-      }
+      const result = await login(username, password);
+      if (result?.mfaRequired) { setScreen('mfa_verify'); return; }
+      if (result?.mfaSetupRequired) { setScreen('mfa_setup'); return; }
       navigate('/dashboard');
     } catch { /* error set in store */ }
+  }
+
+  async function handleMfaVerify(e) {
+    e.preventDefault();
+    try {
+      await loginWithMfa(mfaCode);
+      navigate('/dashboard');
+    } catch { /* error set in store */ }
+  }
+
+  async function handleMfaConfirmSetup(e) {
+    e.preventDefault();
+    setSetupLoading(true);
+    setSetupError('');
+    try {
+      const { data } = await authAPI.mfaConfirmSetup(mfaCode);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = '/dashboard';
+    } catch (err) {
+      setSetupError(err.response?.data?.error || 'Mã xác thực không đúng. Vui lòng thử lại.');
+      setSetupLoading(false);
+    }
   }
 
   return (
@@ -211,82 +247,81 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="mb-8">
             <h1 className="text-2xl font-bold" style={{ color: 'var(--eoc-text-primary)' }}>
-              {needMfa ? 'Xác thực 2 bước' : 'Đăng nhập'}
+              {screen === 'mfa_verify' ? t('login.mfa_verify_title') : screen === 'mfa_setup' ? t('login.mfa_setup_title') : t('login.title')}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--eoc-text-muted)' }}>
-              {needMfa
-                ? 'Nhập mã 6 chữ số từ ứng dụng xác thực của bạn'
-                : 'Truy cập hệ thống quản lý thiên tai quốc gia'}
+              {screen === 'mfa_verify'
+                ? t('login.mfa_verify_desc')
+                : screen === 'mfa_setup'
+                ? t('login.mfa_setup_desc')
+                : t('login.subtitle')}
             </p>
           </div>
 
-          {/* Error */}
-          {error && (
+          {/* Error banner */}
+          {(error || setupError) && (
             <div className="mb-5 flex items-center gap-2 px-4 py-3 rounded-xl border text-sm"
               style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)', color: '#fca5a5' }}>
-              <AlertCircle size={15} className="shrink-0" /> {error}
+              <AlertCircle size={15} className="shrink-0" /> {error || setupError}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {!needMfa ? (
-              <>
-                {/* Username */}
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
-                    style={{ color: 'var(--eoc-text-muted)' }}>
-                    Tên đăng nhập
-                  </label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border outline-none transition text-sm"
-                    style={{
-                      background: 'var(--eoc-bg-elevated)',
-                      borderColor: 'var(--eoc-border)',
-                      color: 'var(--eoc-text-primary)',
-                    }}
-                    placeholder="admin"
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                {/* Password */}
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
-                    style={{ color: 'var(--eoc-text-muted)' }}>
-                    Mật khẩu
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPwd ? 'text' : 'password'}
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 pr-11 rounded-xl border outline-none transition text-sm"
-                      style={{
-                        background: 'var(--eoc-bg-elevated)',
-                        borderColor: 'var(--eoc-border)',
-                        color: 'var(--eoc-text-primary)',
-                      }}
-                      placeholder="••••••••"
-                      required
-                    />
-                    <button type="button" onClick={() => setShowPwd(!showPwd)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 transition hover:opacity-70"
-                      style={{ color: 'var(--eoc-text-muted)' }}>
-                      {showPwd ? <EyeOff size={17} /> : <Eye size={17} />}
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* MFA code input */
+          {/* ── Screen: login ── */}
+          {screen === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
                   style={{ color: 'var(--eoc-text-muted)' }}>
-                  Mã xác thực (TOTP)
+                  {t('login.username_label')}
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border outline-none transition text-sm"
+                  style={{ background: 'var(--eoc-bg-elevated)', borderColor: 'var(--eoc-border)', color: 'var(--eoc-text-primary)' }}
+                  placeholder="admin"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
+                  style={{ color: 'var(--eoc-text-muted)' }}>
+                  {t('login.password_label')}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 pr-11 rounded-xl border outline-none transition text-sm"
+                    style={{ background: 'var(--eoc-bg-elevated)', borderColor: 'var(--eoc-border)', color: 'var(--eoc-text-primary)' }}
+                    placeholder="••••••••"
+                    required
+                  />
+                  <button type="button" onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 transition hover:opacity-70"
+                    style={{ color: 'var(--eoc-text-muted)' }}>
+                    {showPwd ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition disabled:opacity-50 mt-2"
+                style={{ background: 'var(--eoc-accent)', color: '#fff' }}>
+                {loading ? <Loader2 size={17} className="animate-spin" /> : <><span>{t('login.submit')}</span><ChevronRight size={16} /></>}
+              </button>
+            </form>
+          )}
+
+          {/* ── Screen: mfa_verify ── */}
+          {screen === 'mfa_verify' && (
+            <form onSubmit={handleMfaVerify} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
+                  style={{ color: 'var(--eoc-text-muted)' }}>
+                  {t('login.mfa_code_label')}
                 </label>
                 <input
                   type="text"
@@ -296,44 +331,69 @@ export default function LoginPage() {
                   value={mfaCode}
                   onChange={e => setMfaCode(e.target.value.replace(/\D/g, ''))}
                   className="w-full px-4 py-3 rounded-xl border outline-none text-center text-2xl tracking-[0.5em] font-bold"
-                  style={{
-                    background: 'var(--eoc-bg-elevated)',
-                    borderColor: 'var(--eoc-border)',
-                    color: 'var(--eoc-accent)',
-                  }}
+                  style={{ background: 'var(--eoc-bg-elevated)', borderColor: 'var(--eoc-border)', color: 'var(--eoc-accent)' }}
                   placeholder="000000"
                   autoFocus
                 />
-                <button type="button" onClick={() => setNeedMfa(false)}
-                  className="mt-2 text-xs transition hover:opacity-70"
-                  style={{ color: 'var(--eoc-text-muted)' }}>
-                  ← Quay lại đăng nhập
-                </button>
               </div>
-            )}
+              <button type="submit" disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition disabled:opacity-50"
+                style={{ background: 'var(--eoc-accent)', color: '#fff' }}>
+                {loading ? <Loader2 size={17} className="animate-spin" /> : <><span>{t('login.confirm_btn')}</span><ChevronRight size={16} /></>}
+              </button>
+              <button type="button" onClick={() => setScreen('login')}
+                className="w-full text-xs text-center transition hover:opacity-70"
+                style={{ color: 'var(--eoc-text-muted)' }}>
+                {t('login.back_to_login')}
+              </button>
+            </form>
+          )}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition disabled:opacity-50 mt-2"
-              style={{ background: 'var(--eoc-accent)', color: '#fff', boxShadow: '0 0 20px rgba(var(--eoc-accent-rgb, 6,182,212),0.3)' }}
-            >
-              {loading ? (
-                <Loader2 size={17} className="animate-spin" />
-              ) : (
-                <>
-                  {needMfa ? 'Xác nhận' : 'Đăng nhập'}
-                  <ChevronRight size={16} />
-                </>
-              )}
-            </button>
-          </form>
+          {/* ── Screen: mfa_setup ── */}
+          {screen === 'mfa_setup' && (
+            <form onSubmit={handleMfaConfirmSetup} className="space-y-5">
+              <div className="flex justify-center">
+                {otpauthUrl
+                  ? <div className="p-3 bg-white rounded-xl"><QRCodeSVG value={otpauthUrl} size={180} /></div>
+                  : <div className="w-[206px] h-[206px] rounded-xl flex items-center justify-center"
+                      style={{ background: 'var(--eoc-bg-elevated)', color: 'var(--eoc-text-muted)' }}>
+                      <Loader2 size={24} className="animate-spin" />
+                    </div>
+                }
+              </div>
+              <p className="text-xs text-center" style={{ color: 'var(--eoc-text-muted)' }}>
+                {t('login.mfa_setup_instruction')}
+              </p>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
+                  style={{ color: 'var(--eoc-text-muted)' }}>
+                  {t('login.mfa_confirm_label')}
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={e => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-4 py-3 rounded-xl border outline-none text-center text-2xl tracking-[0.5em] font-bold"
+                  style={{ background: 'var(--eoc-bg-elevated)', borderColor: 'var(--eoc-border)', color: 'var(--eoc-accent)' }}
+                  placeholder="000000"
+                  autoFocus
+                />
+              </div>
+              <button type="submit" disabled={setupLoading || !otpauthUrl}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition disabled:opacity-50"
+                style={{ background: 'var(--eoc-accent)', color: '#fff' }}>
+                {setupLoading ? <Loader2 size={17} className="animate-spin" /> : <><span>{t('login.activate_mfa')}</span><ChevronRight size={16} /></>}
+              </button>
+            </form>
+          )}
 
           <div className="mt-5 text-center">
             <Link to="/" className="text-xs transition hover:opacity-70"
               style={{ color: 'var(--eoc-text-muted)' }}>
-              ← Về trang chủ công dân
+              {t('login.back_to_citizen')}
             </Link>
           </div>
         </div>

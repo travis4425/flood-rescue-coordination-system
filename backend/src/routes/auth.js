@@ -20,4 +20,9 @@ router.post('/logout', AuthController.logout);
 router.get('/me', authenticate, AuthController.getMe);
 router.put('/password', authenticate, validateBody(changePasswordSchema), AuthController.changePassword);
 
+// MFA — dùng mfa_pending cookie, không cần authenticate đầy đủ
+router.get('/mfa/setup', AuthController.mfaSetup);
+router.post('/mfa/confirm-setup', AuthController.mfaConfirmSetup);
+router.post('/mfa/verify', AuthController.mfaVerify);
+
 module.exports = router;

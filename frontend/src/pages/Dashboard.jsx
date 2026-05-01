@@ -399,10 +399,10 @@ export default function Dashboard() {
       {/* ── Manager resource view ── */}
       {user?.role === 'manager' && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard icon={Truck} label="Tổng phương tiện" value={resourceOverview?.vehicles?.total} />
-          <KpiCard icon={Truck} label="Đang sử dụng" value={resourceOverview?.vehicles?.in_use} accent />
-          <KpiCard icon={Archive} label="Kho hàng" value={resourceOverview?.warehouses?.total} />
-          <KpiCard icon={Package} label="Loại hàng tồn kho" value={resourceOverview?.inventory?.total_items} />
+          <KpiCard icon={Truck} label={t('dashboard.kpi.total_vehicles')} value={resourceOverview?.vehicles?.total} />
+          <KpiCard icon={Truck} label={t('dashboard.kpi.vehicles_in_use')} value={resourceOverview?.vehicles?.in_use} accent />
+          <KpiCard icon={Archive} label={t('dashboard.kpi.warehouses')} value={resourceOverview?.warehouses?.total} />
+          <KpiCard icon={Package} label={t('dashboard.kpi.inventory_types')} value={resourceOverview?.inventory?.total_items} />
         </div>
       )}
 
@@ -411,12 +411,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <KpiCard icon={AlertTriangle} label={t('dashboard.pendingSOS')} value={o.pending}
             accent sub="Cần xác minh" onClick={() => navigate('/dashboard/requests')} />
-          <KpiCard icon={Activity} label="Đang cứu hộ" value={o.in_progress}
+          <KpiCard icon={Activity} label={t('dashboard.kpi.in_progress')} value={o.in_progress}
             onClick={() => navigate('/dashboard/missions')} />
-          <KpiCard icon={CheckCircle} label="Hoàn thành" value={o.completed} />
-          <KpiCard icon={Users} label="Nạn nhân" value={o.total_victims} />
-          <KpiCard icon={Users} label="Đã cứu" value={o.total_rescued} />
-          <KpiCard icon={AlertTriangle} label="Tổng yêu cầu" value={o.total_requests} />
+          <KpiCard icon={CheckCircle} label={t('dashboard.kpi.completed')} value={o.completed} />
+          <KpiCard icon={Users} label={t('dashboard.kpi.victims')} value={o.total_victims} />
+          <KpiCard icon={Users} label={t('dashboard.kpi.rescued')} value={o.total_rescued} />
+          <KpiCard icon={AlertTriangle} label={t('dashboard.kpi.total_requests')} value={o.total_requests} />
         </div>
       )}
 
